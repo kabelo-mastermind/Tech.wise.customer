@@ -27,24 +27,25 @@ export default function TripDetails({ navigation, route }) {
   const [userCustomer, setUserCustomer] = useState(null);
   const [payment, setPayment] = useState(null)
   const [loadingData, setLoadingData] = useState(true)
+  const [generatingReceipt, setGeneratingReceipt] = useState(false)
   console.log("user driver:", userDriver);
 
   // Function to upload receipt to Firebase Storage
   const uploadReceiptToStorage = async (uri, fileName, userId) => {
-    const fileData = await FileSystem.readAsStringAsync(uri, {
-      encoding: FileSystem.EncodingType.Base64,
-    });
+    try {
+      // Fetch the file and convert to blob
+      const response = await fetch(uri);        // ✅ SAFELY fetch the file
+      const blob = await response.blob();       // ✅ Convert to proper blob
 
-    // Add userId to the path
-    const storageRef = ref(storage, `receipts/${userId}/${fileName}`);
+      const storageRef = ref(storage, `receipts/${userId}/${fileName}`);
+      await uploadBytes(storageRef, blob);      // ✅ Upload the blob
+      const downloadURL = await getDownloadURL(storageRef);
 
-    const blob = new Blob([Uint8Array.from(atob(fileData), c => c.charCodeAt(0))], {
-      type: 'application/pdf',
-    });
-
-    await uploadBytes(storageRef, blob);
-    const url = await getDownloadURL(storageRef);
-    return url;
+      return downloadURL;
+    } catch (error) {
+      console.error("❌ Error uploading to Firebase:", error);
+      throw error;
+    }
   };
 
 
@@ -81,137 +82,198 @@ export default function TripDetails({ navigation, route }) {
   // Function to generate receipt as PDF and share it
   const generateReceipt = async () => {
     if (!trip || !payment) return;
-
+    setGeneratingReceipt(true);
     const htmlContent = `
-    <html>
-      <head>
-        <style>
-          body {
-            font-family: 'Segoe UI', Arial, sans-serif;
-            background: #f9fdfc;
-            padding: 30px;
-            color: #222;
-          }
-          .header {
-            text-align: center;
-            margin-bottom: 30px;
-          }
-          .app-name {
-            font-size: 38px;
-            font-weight: bold;
-            color: #04a782;
-            letter-spacing: 1px;
-            margin-bottom: 5px;
-          }
-          .slogan {
-            font-size: 18px;
-            color: #388e8e;
-            font-style: italic;
-            margin-bottom: 18px;
-          }
-          .gratitude-bar {
-            background: linear-gradient(90deg, #41d8e5 0, #04a782 100%);
-            color: #fff;
-            border-radius: 12px;
-            text-align: center;
-            padding: 14px 0;
-            font-size: 20px;
-            font-weight: 500;
-            margin-bottom: 24px;
-          }
-          .section {
-            background: #fff;
-            border-radius: 10px;
-            box-shadow: 0 2px 7px rgba(44, 193, 212, 0.04);
-            padding: 20px 18px 14px 18px;
-            margin-bottom: 22px;
-          }
-          .label {
-            font-weight: 600;
-            color: #159c8a;
-            margin-right: 3px;
-          }
-          .divider {
-            border-top: 1.5px dashed #d6f1e7;
-            margin: 20px 0;
-          }
-          .greeting {
-            font-size: 19px;
-            text-align: left;
-            margin-bottom: 4px;
-            color: #222;
-          }
-          .thanks-message {
-            color: #159c8a;
-            text-align: center;
-            font-size: 15px;
-            font-weight: 500;
-            margin-top: 26px;
-            margin-bottom: 10px;
-          }
-          .footer-note {
-            text-align: center;
-            font-size: 12px;
-            color: #9ea6a5;
-            margin-bottom: 0;
-          }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <div class="app-name">Nthome</div>
-          <div class="slogan">nthome ka petjana</div>
-        </div>
+   <html>
+<head>
+  <style>
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: #f9fdfc;
+      padding: 30px;
+      color: #222;
+    }
+    .main-container {
+      max-width: 630px;
+      margin: 0 auto;
+      background: #fff;
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 8px 28px rgba(44, 193, 212, 0.09);
+      border: 1.5px solid #d6f1e7;
+    }
+    .top-bar {
+      background: linear-gradient(90deg, #41d8e5 0, #04a782 100%);
+      color: #fff;
+      padding: 36px 32px 18px 32px;
+      text-align: left;
+    }
+    .app-logo {
+      font-size: 36px;
+      font-weight: bold;
+      letter-spacing: 3px;
+      margin-bottom: 2px;
+      color: #fff;
+    }
+    .slogan {
+      font-size: 15px;
+      font-style: italic;
+      color: #e0f7f7;
+      margin-bottom: 8px;
+    }
+    .receipt-title {
+      font-size: 28px;
+      font-weight: 700;
+      margin: 18px 0 5px 0;
+      letter-spacing: 2px;
+      color: #fff;
+    }
+    .receipt-meta {
+      font-size: 15px;
+      color: #caf6f6;
+      margin-bottom: 2px;
+      margin-top: 2px;
+    }
+    .summary-section {
+      background: #f4fcfa;
+      padding: 18px 32px;
+      border-radius: 0 0 16px 16px;
+    }
+    .summary-table {
+      width: 100%;
+      margin: 8px 0 0 0;
+      border-collapse: collapse;
+    }
+    .summary-table td {
+      padding: 8px 6px;
+      vertical-align: top;
+      font-size: 16px;
+    }
+    .summary-table .label {
+      color: #04a782;
+      font-weight: 500;
+      width: 120px;
+    }
+    .divider {
+      border-top: 1.5px dashed #d6f1e7;
+      margin: 24px 0;
+    }
+    .section {
+      padding: 24px 32px 14px 32px;
+      background: #fff;
+    }
+    .section-title {
+      color: #04a782;
+      font-weight: 700;
+      font-size: 18px;
+      margin-bottom: 8px;
+    }
+    .info-row {
+      margin-bottom: 5px;
+    }
+    .info-label {
+      font-weight: 600;
+      color: #159c8a;
+      margin-right: 3px;
+      font-size: 15px;
+    }
+    .payment-summary {
+      background: linear-gradient(90deg, #04a782 0, #41d8e5 100%);
+      color: #fff;
+      text-align: right;
+      font-size: 22px;
+      padding: 20px 32px;
+      border-radius: 0 0 16px 16px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      margin-top: 16px;
+    }
+    .footer {
+      text-align: center;
+      color: #9ea6a5;
+      font-size: 14px;
+      margin-top: 22px;
+      margin-bottom: 12px;
+    }
+    .thanks {
+      display: block;
+      color: #159c8a;
+      font-weight: 600;
+      margin-top: 16px;
+      text-align: center;
+      font-size: 16px;
+    }
+  </style>
+</head>
+<body>
+  <div class="main-container">
+    <div class="top-bar">
+      <div class="app-logo">Nthome</div>
+      <div class="slogan">nthome ka petjana</div>
+      <div class="receipt-title">RECEIPT</div>
+      <div class="receipt-meta">Receipt #${payment?.payment_reference || '---'}<br>
+        ${formatDate(payment?.paymentDate)}
+      </div>
+    </div>
 
-        <div class="gratitude-bar">
-          We sincerely appreciate you choosing Nthome!
-        </div>
+    <div class="summary-section">
+      <table class="summary-table">
+        <tr>
+          <td class="label">Trip Date:</td>
+          <td>${formatDate(trip?.pickupTime)}</td>
+        </tr>
+        <tr>
+          <td class="label">From:</td>
+          <td>${trip?.pickUpLocation}</td>
+        </tr>
+        <tr>
+          <td class="label">To:</td>
+          <td>${trip?.dropOffLocation}</td>
+        </tr>
+        <tr>
+          <td class="label">Distance:</td>
+          <td>${roundToTwo(trip?.distance_traveled)} km</td>
+        </tr>
+        <tr>
+          <td class="label">Duration:</td>
+          <td>${roundToTwo(trip?.duration_minutes)} min</td>
+        </tr>
+      </table>
+    </div>
+    
+    <div class="divider"></div>
 
-        <div class="section">
-          <div class="greeting">Hi, ${userCustomer?.name || "Valued Rider"}! Here are your trip details:</div>
-          <p><span class="label">Date:</span> ${formatDate(trip?.pickupTime)}</p>
-          <p><span class="label">From:</span> ${trip?.pickUpLocation}</p>
-          <p><span class="label">To:</span> ${trip?.dropOffLocation}</p>
-          <p><span class="label">Distance:</span> ${roundToTwo(trip?.distance_traveled)} km</p>
-          <p><span class="label">Duration:</span> ${roundToTwo(trip?.duration_minutes)} min</p>
-        </div>
+    <div class="section">
+      <div class="section-title">Payment</div>
+      <div class="info-row"><span class="info-label">Total Paid:</span> R${payment.amount}</div>
+      <div class="info-row"><span class="info-label">Method:</span> ${payment.paymentType}</div>
+      <div class="info-row"><span class="info-label">Status:</span> ${payment.payment_status}</div>
+      <div class="info-row"><span class="info-label">Currency:</span> ${payment.currency}</div>
+    </div>
 
-        <div class="divider"></div>
+    <div class="divider"></div>
+    <div class="section">
+      <div class="section-title">Driver Info</div>
+      <div class="info-row"><span class="info-label">Name:</span> ${userDriver?.name || "N/A"}</div>
+    </div>
+    <div class="divider"></div>
+    <div class="section">
+      <div class="section-title">Customer Info</div>
+      <div class="info-row"><span class="info-label">Name:</span> ${userCustomer?.name || "N/A"}</div>
+    </div>
+    <div class="payment-summary">
+      Total Paid: R${payment.amount}
+    </div>
+    <span class="thanks">
+     Thank you for riding with Nthome!<br>
+      We hope your journey was delightful.<br>
+      <span style="color:#438c8c; font-size:13px;">We look forward to seeing you again soon!</span>
+    </span>
+    <div class="footer">Nthome — Making every ride special for you.</div>
+  </div>
+</body>
+</html>
 
-        <div class="section">
-          <h3 style="color:#04a782;">Payment</h3>
-          <p><span class="label">Total Paid:</span> R${payment.amount}</p>
-          <p><span class="label">Method:</span> ${payment.paymentType}</p>
-          <p><span class="label">Status:</span> ${payment.payment_status}</p>
-          <p><span class="label">Reference:</span> ${payment.payment_reference}</p>
-          <p><span class="label">Currency:</span> ${payment.currency}</p>
-          <p><span class="label">Date:</span> ${formatDate(payment.paymentDate)}</p>
-        </div>
-
-        <div class="divider"></div>
-
-        <div class="section">
-          <h3 style="color:#04a782;">Driver Info</h3>
-          <p><span class="label">Name:</span> ${userDriver?.name || "N/A"}</p>
-        </div>
-
-        <div class="divider"></div>
-
-        <div class="section">
-          <h3 style="color:#04a782;">Customer Info</h3>
-          <p><span class="label">Name:</span> ${userCustomer?.name || "N/A"}</p>
-          <p><span class="label">Email:</span> ${userCustomer?.email || "N/A"}</p>
-          <p><span class="label">Phone:</span> ${userCustomer?.phoneNumber || "N/A"}</p>
-        </div>
-
-        <div class="thanks-message">
-          🚗 Thank you for being part of the Nthome family!<br>
-          We hope your journey was delightful.<br>
-          <span style="font-size:13px; color:#438c8c;">We look forward to driving you again soon!</span>
-        </div>
-        <p class="footer-note">Nthome &mdash; Making every ride special for you.</p>
-      </body>
-    </html>
   `;
 
     try {
@@ -236,25 +298,14 @@ export default function TripDetails({ navigation, route }) {
         receiptUrl: downloadURL,
       });
       console.log("✅ Receipt email request sent to backend.");
-
-      // Optionally share the PDF on device
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(uri, {
-          mimeType: 'application/pdf',
-          dialogTitle: `Nthome Trip Receipt ${tripId}`,
-          UTI: 'com.adobe.pdf',
-        });
-      } else {
-        alert("Sharing not available on this device.");
-      }
+      alert("Receipt generated and sent to your email successfully!");
 
     } catch (error) {
       console.error("❌ Error generating receipt:", error);
+    } finally {
+      setGeneratingReceipt(false);
     }
   };
-
-
-
 
   // Fetch trip and related data when component mounts
   // This will fetch trip details, driver details, customer details, and payment details
@@ -287,7 +338,7 @@ export default function TripDetails({ navigation, route }) {
         }
 
       } catch (err) {
-        console.error("Error fetching trip or related data:", err)
+        console.log("Error fetching trip or related data:", err)
       } finally {
         setLoadingData(false)
       }
@@ -306,7 +357,7 @@ export default function TripDetails({ navigation, route }) {
       const driverData = await response.json()
       return driverData
     } catch (error) {
-      console.error("Fetch driver error:", error)
+      console.log("Fetch driver error:", error)
       return null
     }
   }
@@ -321,7 +372,7 @@ export default function TripDetails({ navigation, route }) {
       const customerData = await response.json();
       return customerData;
     } catch (error) {
-      console.error("Fetch customer by query error:", error);
+      console.log("Fetch customer by query error:", error);
       return null;
     }
   }
@@ -336,7 +387,7 @@ export default function TripDetails({ navigation, route }) {
       const paymentData = await response.json()
       return paymentData
     } catch (error) {
-      console.error("Fetch payment error:", error)
+      console.log("Fetch payment error:", error)
       return null
     }
   }
@@ -409,18 +460,18 @@ export default function TripDetails({ navigation, route }) {
           <ArrowLeft size={24} color="#000" />
         </TouchableOpacity>
         <View style={styles.headerText}>
-          <Text style={styles.headerTitle}>{userDriver?.name ? `Ride with ${userCustomer?.name}` : "Ride Details"}</Text>
+          <Text style={styles.headerTitle}>{userCustomer?.name ? `Ride with ${userCustomer?.name}` : "Ride Details"}</Text>
           <Text style={styles.headerDate}>{formatDate(trip?.requestDate)}</Text>
-          {userDriver?.carMake && (
+          {userCustomer?.carMake && (
             <Text style={styles.headerDate}>
-              {userDriver.carMake} {userDriver.carModel} ({userDriver.licensePlate})
+              {userCustomer.carMake} {userCustomer.carModel} ({userCustomer.licensePlate})
             </Text>
           )}
         </View>
         <TouchableOpacity onPress={() => navigation.navigate("DriverProfile")}>
           <View style={styles.profileIcon}>
-            {userDriver?.profile_picture ? (
-              <Image source={{ uri: userDriver.profile_picture }} style={styles.profileImage} />
+            {userCustomer?.profile_picture ? (
+              <Image source={{ uri: userCustomer.profile_picture }} style={styles.profileImage} />
             ) : (
               <User size={24} color="#666" />
             )}
@@ -476,7 +527,7 @@ export default function TripDetails({ navigation, route }) {
           <Text style={styles.sectionTitle}>Additional ride details</Text>
           <Text style={styles.additionalInfo}>Status: {trip?.statuses || "N/A"}</Text>
           <Text style={styles.additionalInfo}>Created At: {formatDate(trip?.requestDate) || "N/A"}</Text>
-          <Text style={styles.additionalInfo}>Customer Ratings: {trip?.driver_ratings || "N/A"}</Text>
+          <Text style={styles.additionalInfo}>Driver Ratings: {trip?.customer_rating || "N/A"}</Text>
           <Text style={styles.additionalInfo}>Driver Name: {userDriver?.name || "N/A"}</Text>
 
           {/* {trip?.vehicle_type && (
@@ -527,14 +578,14 @@ export default function TripDetails({ navigation, route }) {
               {payment?.payment_status && (
                 <Text style={styles.additionalInfo}>Payment Status: {payment.payment_status}</Text>
               )}
-              {payment?.paymentType && <Text style={styles.additionalInfo}>Payment Method: {payment.paymentType}</Text>}
+              {/* {payment?.paymentType && <Text style={styles.additionalInfo}>Payment Method: {payment.paymentType}</Text>} */}
               {payment?.payment_reference && (
                 <Text style={styles.additionalInfo}>Reference: {payment.payment_reference}</Text>
               )}
               {payment?.currency && <Text style={styles.additionalInfo}>Currency: {payment.currency}</Text>}
               {payment?.paymentDate && (
                 <Text style={styles.additionalInfo}>
-                  Payment Date: {new Date(payment.paymentDate).toLocaleString()}
+                  Payment Date: {formatDate(payment?.paymentDate) || "N/A"}
                 </Text>
               )}
 
@@ -543,7 +594,7 @@ export default function TripDetails({ navigation, route }) {
                   <View style={styles.cashIcon}>
                     <Text style={styles.cashIconText}>R</Text>
                   </View>
-                  <Text style={styles.paymentMethodText}>Cash</Text>
+                  <Text style={styles.paymentMethodText}>{payment.paymentType}</Text>
                 </View>
                 <Text style={styles.paymentAmount}>{trip?.total}</Text>
               </View>
@@ -551,10 +602,19 @@ export default function TripDetails({ navigation, route }) {
           </View>
 
           {/* Receipt Button */}
-          {/* <TouchableOpacity style={styles.button} onPress={generateReceipt}>
-            <Receipt size={20} color="#000" />
-            <Text style={styles.buttonText}>Get receipt</Text>
-          </TouchableOpacity> */}
+          <TouchableOpacity style={styles.button} onPress={generateReceipt}>
+            {generatingReceipt ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color="#0DCAF0" />
+                {/* <Text style={styles.loadingText}>Generating receipt...</Text> */}
+              </View>
+            ) : (
+              <>
+                <Receipt size={20} color="#000" />
+                <Text style={styles.buttonText}>Get receipt</Text>
+              </>
+            )}
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </SafeAreaView>

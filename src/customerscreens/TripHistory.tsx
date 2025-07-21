@@ -62,7 +62,7 @@ export default function MyRidesScreen({ navigation }) {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const toggleDrawer = () => setDrawerOpen(!drawerOpen)
 
-  const userId = useSelector((state) => state.auth.user.user_id)
+  const userId = useSelector((state) => state.auth.user?.user_id)
   const customerId = userId || null
   console.log("Customer ID:", customerId)
 
