@@ -1,0 +1,66 @@
+{
+  "expo": {
+    "name": "Nthome",
+    "slug": "Nthome",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0DCAF0"
+    },
+    "updates": {
+      "fallbackToCacheTimeout": 0
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "config": {
+        "googleMapsApiKey": "AIzaSyCW_3yyD7H0125SOsP-vABHG6BrSm47j-w"
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#0DCAF0"
+      },
+      "package": "com.dj_kd.Nthome",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ],
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyCW_3yyD7H0125SOsP-vABHG6BrSm47j-w"
+        }
+      }
+    },
+    "web": {
+      "favicon": "./assets/icon.png"
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow location app to use your location."
+        }
+      ],
+      "expo-router"
+    ],
+    "extra": {
+      "googleMapsApiKey": "AIzaSyCW_3yyD7H0125SOsP-vABHG6BrSm47j-w",
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "a0efdafd-a6ea-4285-9b10-581923d5e344"
+      }
+    },
+    "newArchEnabled": true
+  }
+}

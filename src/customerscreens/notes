@@ -1,0 +1,1754 @@
+
+import/download csv on academic properties
+
+
+
+const SCREEN_HEIGHT = Dimensions.get('window').height;
+const SCREEN_WIDTH = Dimensions.get('window').width;
+
+-----------------------------------------------bottom sheet back up------------------------
+i want to make my text inputs to function well, when i enter an address it must AUTO complete my locations using google maps
+import React, { useContext, useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { StyleSheet, Image, View, Text, Dimensions, TouchableOpacity } from 'react-native';
+import MapComponent from '../components/MapComponent';
+import { colors, parameters } from '../global/styles';
+import { rideData } from '../global/data';
+import { Avatar, Icon } from 'react-native-elements';
+import { DestinationContext, OriginContext } from '../contexts/contexts';
+import BottomSheet, { BottomSheetFlatList } from '@gorhom/bottom-sheet';
+import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
+import { GOOGLE_MAPS_APIKEY } from "@env";
+
+const SCREEN_HEIGHT = Dimensions.get('window').height;
+const SCREEN_WIDTH = Dimensions.get('window').width;
+
+export default function RequestScreen({ navigation, route }) {
+  const { origin, dispatchOrigin } = useContext(OriginContext);
+  const { destination, dispatchDestination } = useContext(DestinationContext);
+  const [setDestination] = useState(false)
+  const textInput1 = useRef(4)
+  const textInput2 = useRef(5)
+
+  const [userOrigin, setUserOrigin] = useState({
+    latitude: origin?.latitude || 0,
+    longitude: origin?.longitude || 0,
+  });
+  const [userDestination, setUserDestination] = useState({
+    latitude: destination?.latitude || 0,
+    longitude: destination?.longitude || 0,
+  });
+
+  const [isSheetOpen, setIsSheetOpen] = useState(true); // To track BottomSheet state
+  const index = route.params?.state ?? 0;
+  const snapPoints1 = useMemo(() => ['70%'], []);
+  const BottomSheet1 = useRef(null);
+
+  const handleSheetChange1 = useCallback(
+    (index) => {
+      if (index === -1) setIsSheetOpen(false); // If BottomSheet is fully closed
+    },
+    []
+  );
+
+  const handleArrowPress = () => {
+    BottomSheet1.current?.expand(); // Reopen BottomSheet
+    setIsSheetOpen(true);
+  };
+
+  useEffect(() => {
+    if (origin?.latitude && origin?.longitude) {
+      setUserOrigin({
+        latitude: origin.latitude,
+        longitude: origin.longitude,
+      });
+    }
+    if (destination?.latitude && destination?.longitude) {
+      setUserDestination({
+        latitude: destination.latitude,
+        longitude: destination.longitude,
+      });
+    }
+
+    // Check if both Origin and Destination are set
+    if (origin?.latitude && origin?.longitude && destination?.latitude && destination?.longitude) {
+      setIsSheetOpen(false); // Close the BottomSheet
+    } else {
+      setIsSheetOpen(true); // Open the BottomSheet
+    }
+  }, [origin, destination]);
+
+
+  const renderFlatListItems = useCallback(
+    ({ item }) => (
+      <View>
+        <View style={styles.view10}>
+          <View style={styles.view11}>
+            <Icon type="material-community" name="clock-time-four" color={colors.white} size={18} />
+          </View>
+          <View>
+            <Text style={{ fontSize: 15, color: colors.grey1 }}>{item.street}</Text>
+            <Text style={{ color: colors.grey4 }}>{item.area}</Text>
+          </View>
+        </View>
+      </View>
+    ),
+    []
+  );
+
+  return (
+    <>
+      <View style={styles.container}>
+        <TouchableOpacity onPress={() => navigation.goBack()}>
+          <View style={styles.view1}>
+            <Icon type="material-community" name="arrow-left" size={32} color={colors.grey1} />
+          </View>
+        </TouchableOpacity>
+        <View style={styles.view2}>
+          <TouchableOpacity>
+            <View style={styles.view3}>
+              <Avatar rounded size={30} source={require('../../assets/blankProfilePic.jpg')} />
+              <Text style={{ marginLeft: 5 }}>For Someone</Text>
+              <Icon type="material-community" name="chevron-down" size={26} color={colors.grey1} />
+            </View>
+          </TouchableOpacity>
+          <View style={styles.view4}>
+            <View>
+              <Image style={styles.image1} source={require('../../assets/transit.png')} />
+            </View>
+            <View>
+              <TouchableOpacity >
+                <View style={styles.view6}>
+                  {/* <Text style={styles.text1}>From where</Text> */}
+                  <GooglePlacesAutocomplete
+                    nearbyPlacesAPI='GooglePlacesSearch'
+                    placeholder="From..."
+                    listViewDisplayed="auto"
+                    debounce={400}
+                    currentLocation={true}
+                    ref={textInput1}
+                    minLength={2}
+                    enablePoweredByContainer={false}
+                    fetchDetails={true}
+                    autoFocus={true}
+                    styles={autoComplete}
+                    query={{
+                      key: GOOGLE_MAPS_APIKEY,
+                      language: "en"
+                    }}
+
+                    onPress={(data, details = null) => {
+                      dispatchOrigin({
+                        type: "ADD_ORIGIN", payload: {
+                          latitude: details.geometry.location.lat,
+                          longitude: details.geometry.location.lng,
+                          address: details.formatted_address,
+                          name: details.name
+                        }
+                      })
+
+                      setDestination(true)
+                    }}
+
+                  />
+                </View>
+              </TouchableOpacity>
+              <View style={styles.view7}>
+                <TouchableOpacity>
+                  <View style={styles.view5}>
+                    {/* <Text style={styles.text1}>Where to</Text> */}
+                    <GooglePlacesAutocomplete
+                      nearbyPlacesAPI='GooglePlacesSearch'
+                      placeholder="Going to..."
+                      listViewDisplayed="auto"
+                      debounce={400}
+                      currentLocation={true}
+                      ref={textInput2}
+                      minLength={2}
+                      enablePoweredByContainer={false}
+                      fetchDetails={true}
+                      autoFocus={true}
+                      styles={autoComplete}
+                      query={{
+                        key: GOOGLE_MAPS_APIKEY,
+                        language: "en"
+                      }}
+
+                      onPress={(data, details = null) => {
+                        dispatchDestination({
+                          type: "ADD_DESTINATION", payload: {
+                            latitude: details.geometry.location.lat,
+                            longitude: details.geometry.location.lng,
+                            address: details.formatted_address,
+                            name: details.name
+                          }
+                        })
+
+                        // setDestination(true)
+                      }}
+
+                    />
+                  </View>
+                </TouchableOpacity>
+                <View style={styles.view8}>
+                  <Icon type="material-community" name="plus-thinck" size={25} color={colors.black} />
+                </View>
+              </View>
+            </View>
+          </View>
+        </View>
+        <MapComponent userOrigin={userOrigin} userDestination={userDestination} />
+
+        <BottomSheet
+          ref={BottomSheet1}
+          index={index}
+          snapPoints={snapPoints1}
+          onChange={handleSheetChange1}
+          enablePanDownToClose={true}
+        >
+          <BottomSheetFlatList
+            keyboardShouldPersistTaps="always"
+            data={rideData}
+            keyExtractor={(item) => item.id}
+            renderItem={renderFlatListItems}
+            contentContainerStyle={styles.contentContainer}
+            ListHeaderComponent={
+              <View style={styles.view10}>
+                <View style={styles.view11}>
+                  <Icon type="material-community" name="star" color={colors.white} size={20} />
+                </View>
+                <View>
+                  <Text style={styles.text9}>Saved Places</Text>
+                </View>
+              </View>
+            }
+            ListFooterComponent={
+              <View>
+                <View style={styles.view10}>
+                  <View style={styles.view11}>
+                    <Icon type="material-community" name="map-marker" color={colors.white} size={20} />
+                  </View>
+                  <View>
+                    <Text style={styles.text9}>Set location on map</Text>
+                  </View>
+                </View>
+                <View style={styles.view10}>
+                  <View style={styles.view11}>
+                    <Icon type="material-community" name="skip-next" color={colors.white} size={20} />
+                  </View>
+                  <View>
+                    <Text style={styles.text9}>Enter destination later</Text>
+                  </View>
+                </View>
+              </View>
+            }
+          />
+        </BottomSheet>
+        {/* Upward Arrow Icon */}
+        {!isSheetOpen && (
+          <TouchableOpacity style={styles.arrowButton} onPress={handleArrowPress}>
+            <Icon type="material-community" name="arrow-up" size={30} color="white" />
+          </TouchableOpacity>
+        )}
+      </View>
+
+    </>
+  );
+}
+
+
+const autoComplete = {
+
+  textInput: {
+    backgroundColor: colors.grey6,
+    height: 50,
+    borderRadius: 5,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    fontSize: 15,
+    flex: 1,
+    borderWidth: 1,
+    marginHorizontal: 15,
+  },
+  container: {
+    paddingTop: 20,
+    flex: 1,
+    backgroundColor: colors.white
+  },
+
+  textInputContainer: {
+    flexDirection: 'row',
+  },
+
+}
+const styles = StyleSheet.create({
+  container1: {
+    flex: 1,
+    paddingTop: parameters.statusBarHeight,
+
+  },
+//////////////////////destination 
+import React, { useContext, useRef, useState } from 'react'
+import { StyleSheet, Text, View, Dimensions, TouchableOpacity, } from 'react-native';
+import { Avatar, Icon } from 'react-native-elements';
+import { colors, parameters } from '../global/styles'
+import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
+import { GOOGLE_MAPS_APIKEY } from "@env";
+import { DestinationContext, OriginContext } from '../contexts/contexts';
+
+// const SCREEN_HEIGHT = Dimensions.get('window').height;
+// const SCREEN_WIDTH = Dimensions.get('window').width;
+
+const DestinationScreen = ({navigation}) => {
+  const {dispatchOrigin} = useContext(OriginContext)
+  const {dispatchDestination} = useContext(DestinationContext)
+
+  const textInput1 = useRef(4)
+  const textInput2 = useRef(5)
+
+  const[destination,setDestination] = useState(false)
+  return (
+    <>
+      <View style={styles.view2}>
+        <View style={styles.view1}>
+          <Icon
+            type='material-community'
+            name="arrow-left"
+            size={32}
+            color={colors.grey1} 
+            onPress={()=>navigation.goBack()}/>
+        </View>
+        <TouchableOpacity>
+          <View style={{top:25, alignItems:"center"}}>
+            <View style={styles.view3}>
+              <Avatar
+                rounded
+                avatarStyle={{}}
+                size={30}
+                source={require('../../assets/blankProfilePic.jpg')}
+
+              />
+              <Text style={{ marginLeft: 5 }}>For Someone</Text>
+              <Icon
+                type='material-community'
+                name="chevron-down"
+                size={26}
+                color={colors.grey1} />
+            </View>
+          </View>
+        </TouchableOpacity>
+      </View>
+      {destination === false &&
+            <GooglePlacesAutocomplete 
+                nearbyPlacesAPI = 'GooglePlacesSearch'
+                placeholder ="From..."
+                listViewDisplayed = "auto"
+                debounce ={400}
+                currentLocation ={true}
+                ref ={textInput1}
+                minLength ={2}
+                enablePoweredByContainer = {false}
+                fetchDetails ={true}
+                autoFocus ={true}
+                styles = {autoComplete}
+                query ={{
+                    key:GOOGLE_MAPS_APIKEY,
+                    language:"en"
+                }}
+
+                onPress= {(data,details = null)=>{
+                    dispatchOrigin({type:"ADD_ORIGIN",payload:{
+                        latitude:details.geometry.location.lat,
+                        longitude:details.geometry.location.lng,
+                        address:details.formatted_address,
+                        name:details.name
+                    }})
+
+                    setDestination(true)
+                }}
+
+            />
+            }
+            {destination === true &&
+            <GooglePlacesAutocomplete 
+                nearbyPlacesAPI = 'GooglePlacesSearch'
+                placeholder ="Going to..."
+                listViewDisplayed = "auto"
+                debounce ={400}
+                currentLocation ={true}
+                ref ={textInput2}
+                minLength ={2}
+                enablePoweredByContainer = {false}
+                fetchDetails ={true}
+                autoFocus ={true}
+                styles = {autoComplete}
+                query ={{
+                    key:GOOGLE_MAPS_APIKEY,
+                    language:"en"
+                }}
+
+                onPress= {(data,details = null)=>{
+                    dispatchDestination({type:"ADD_DESTINATION",payload:{
+                        latitude:details.geometry.location.lat,
+                        longitude:details.geometry.location.lng,
+                        address:details.formatted_address,
+                        name:details.name
+                    }})
+
+                    navigation.navigate("RequestScreen",{state:0})
+                }}
+
+            />
+            }
+    </>
+  )
+}
+
+export default DestinationScreen;
+<TouchableOpacity
+style={styles.arrowButton}
+onPress={() => handleNavigation()}
+>
+<Icon type="material-community" name="arrow-up" size={30} color="white" />
+</TouchableOpacity>
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: parameters.statusBarHeight
+  },
+
+  view1: {
+    position: "absolute",
+    top: 25,
+    left: 12,
+    backgroundColor: colors.white,
+    height: 40,
+    width: 40,
+    borderRadius: 20,
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 2,
+    zIndex: 10
+
+  },
+
+  view3: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 2,
+    marginBottom: 10,
+    backgroundColor: colors.white,
+    height: 30,
+    zIndex: 10
+  },
+
+  view2: {
+    backgroundColor: colors.white,
+    zIndex: 4,
+    paddingBottom: 10,
+
+  },
+
+  view24: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginVertical: 15,
+    paddingHorizontal: 20
+  },
+
+  view25: {
+    flexDirection: 'row',
+    alignItems: "baseline"
+  },
+
+  flatlist: {
+    marginTop: 20,
+    zIndex: 17,
+    elevation: 8
+  },
+
+});
+
+
+const autoComplete = {
+
+  textInput: {
+    backgroundColor: colors.grey6,
+    height: 50,
+    borderRadius: 5,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    fontSize: 15,
+    flex: 1,
+    borderWidth: 1,
+    marginHorizontal: 15,
+  },
+  container: {
+    paddingTop: 20,
+    flex: 1,
+    backgroundColor: colors.white
+  },
+
+  textInputContainer: {
+    flexDirection: 'row',
+  },
+
+}
+
+
+
+
+import { BlurView } from 'expo-blur';
+import React, { useContext, useEffect, useState } from 'react';
+import { Pressable, StyleSheet, SectionList, Image, Dimensions } from 'react-native';
+import { View, Text } from 'react-native-animatable';
+import { Icon } from 'react-native-elements';
+import { DestinationContext } from '../contexts/contexts';
+import { useSelector } from 'react-redux'; // Import useSelector
+import axios from 'axios'; // Import axios for API calls
+
+const { height } = Dimensions.get("window");
+
+const CarListingBottomSheet = ({ navigation }) => {
+  const { dispatchDestination } = useContext(DestinationContext);
+
+  // Accessing distance and duration from the Redux store
+  const distance = useSelector(state => state.location.distance);
+  const duration = useSelector(state => state.location.duration);
+
+  // State to store car data
+  const [carData, setCarData] = useState([]);
+
+  useEffect(() => {
+    // Fetching the required data from the backend
+    const fetchCarData = async () => {
+      try {
+        // Make a single API request to fetch all the consolidated car data
+        const response = await axios.get('http://10.0.2.2:3000/api/cars');
+        const fullCarData = response.data;
+
+        // Set the fetched data to the state
+        setCarData(fullCarData);
+
+        // Log the data for verification
+        console.log("Fetched Car Data:", fullCarData);
+
+      } catch (error) {
+        console.error("Error fetching data:", error);
+      }
+    };
+
+    fetchCarData();
+  }, []); // Empty dependency array to fetch data once when component mounts
+
+  useEffect(() => {
+    // Logging the distance and duration whenever they change
+    if (distance !== null && duration !== null) {
+      console.log('Distance:', distance, 'km');
+      console.log('Duration:', duration, 'mins');
+    }
+  }, [distance, duration]);
+
+  const handleItemPress = (item) => {
+    console.log('Car Type Selected:', item);
+    navigation.navigate('DriverDetailsBottomSheet', { id: item.driverId });
+  };
+
+  return (
+    <View style={styles.container}>
+      <Pressable onPress={() => navigation.goBack()} style={styles.overlay} />
+      <BlurView intensity={70} tint="light" style={styles.blurView}>
+        <Pressable onPress={() => navigation.goBack()} style={styles.cancelContainer}>
+          <Text style={styles.cancelText}>Cancel</Text>
+        </Pressable>
+        <View style={styles.headerContainer}>
+          <Text style={styles.headerText}>Choose Your Ride</Text>
+        </View>
+        <SectionList
+          sections={[{ title: 'Available Cars', data: carData }]} // Using carData as section data
+          keyExtractor={(item) => item.driverId.toString()}
+          renderSectionHeader={({ section: { title } }) => (
+            <Text style={styles.sectionHeader}>{title}</Text>
+          )}
+          renderItem={({ item }) => (
+            <Pressable onPress={() => handleItemPress(item)} style={styles.itemContainer}>
+              <Image source={{ uri: item.vehicleImage }} style={styles.carImage} />
+              <View style={styles.carInfo}>
+                <Text style={styles.carName}>{item.vehicleName} </Text>
+                <Text style={styles.carNote}>Cost per km: R{item.vehicleCostPerKm * distance}</Text>
+                <View style={styles.promotionContainer}>
+                  <Text style={styles.carName}>{item.userName}</Text>
+                </View>
+              </View>
+            </Pressable>
+          )}
+        />
+      </BlurView>
+    </View>
+  );
+};
+
+export default CarListingBottomSheet;
+
+
+import { BlurView } from 'expo-blur';
+import React, { useContext, useEffect } from 'react';
+import { Pressable, StyleSheet, SectionList, Image, Dimensions } from 'react-native';
+import { View, Text } from 'react-native-animatable';
+import { Icon } from 'react-native-elements';
+import { DestinationContext } from '../contexts/contexts';
+import { carTypeData } from '../global/data';
+
+const { height } = Dimensions.get("window");
+
+const CarListingBottomSheet = ({ navigation }) => {
+  const { dispatchDestination } = useContext(DestinationContext);
+
+  // Accessing distance and duration from the Redux store
+  const distance = useSelector(state => state.location.distance);
+  const duration = useSelector(state => state.location.duration);
+
+  // State to store car data
+  const [carData, setCarData] = useState([]);
+
+  useEffect(() => {
+    // Fetching the required data from the backend
+    const fetchCarData = async () => {
+      try {
+        // Make a single API request to fetch all the consolidated car data
+        const response = await axios.get('http://10.0.2.2:3000/api/cars');
+        const fullCarData = response.data;
+
+        // Set the fetched data to the state
+        setCarData(fullCarData);
+
+        // Log the data for verification
+        console.log("Fetched Car Data:", fullCarData);
+
+      } catch (error) {
+        console.error("Error fetching data:", error);
+      }
+    };
+
+    fetchCarData();
+  }, []); // Empty dependency array to fetch data once when component mounts
+
+  useEffect(() => {
+    // Logging the distance and duration whenever they change
+    if (distance !== null && duration !== null) {
+      console.log('Distance:', distance, 'km');
+      console.log('Duration:', duration, 'mins');
+    }
+  }, [distance, duration]);
+
+  const handleItemPress = (item) => {
+    console.log('Car Type Selected:', item);
+    navigation.navigate('DriverDetailsBottomSheet', { id: item.driverId });
+  };
+  return (
+    <View style={styles.container}>
+      <Pressable onPress={() => navigation.goBack()} style={styles.overlay} />
+      <BlurView intensity={70} tint="light" style={styles.blurView}>
+        <Pressable onPress={() => navigation.goBack()} style={styles.cancelContainer}>
+          <Text style={styles.cancelText}>Cancel</Text>
+        </Pressable>
+        <View style={styles.headerContainer}>
+          <Text style={styles.headerText}>Choose Your Ride</Text>
+        </View>
+        <SectionList
+          sections={carTypeData}
+          keyExtractor={(item) => item.id}
+          renderSectionHeader={({ section: { title } }) => (
+            <Text style={styles.sectionHeader}>{title}</Text>
+          )}
+          renderItem={({ item }) => (
+            <Pressable onPress={() => handleItemPress(item)} style={styles.itemContainer}>
+              <Image source={item.image} style={styles.carImage} />
+              <View style={styles.carInfo}>
+                <Text style={styles.carName}>{item.name}</Text>
+                <Text style={styles.carNote}>{item.note}</Text>
+                <View style={styles.promotionContainer}>
+                  <View style={styles.iconTextRow}>
+                    <Icon
+                      name="account"
+                      type="material-community"
+                      size={16}
+                      color="gray"
+                      style={{ marginRight: 5 }}
+                    />
+                    <Text style={styles.promotionText}>{item.seats}</Text>
+                  </View>
+                  <Text style={styles.carPrice}>R{item.price}</Text>
+                </View>
+              </View>
+            </Pressable>
+          )}
+        />
+      </BlurView>
+    </View>
+  );
+};
+
+export default CarListingBottomSheet;
+
+189518776
+
+import React, { useContext, useEffect, useState } from 'react';
+import { StyleSheet, Text, View, Dimensions, TouchableOpacity, Image, TouchableWithoutFeedback, BackHandler } from 'react-native';
+import { Icon } from 'react-native-elements';
+import { colors } from '../global/styles';
+import { DestinationContext, OriginContext } from '../contexts/contexts';
+import { DriverOriginContext } from '../contexts/driverContexts';
+import MapComponent from '../components/MapComponent';
+import axios from 'axios';
+import { GOOGLE_MAPS_APIKEY } from "@env";
+import { SafeAreaView } from 'react-native-safe-area-context';
+import CustomDrawer from '../components/CustomDrawer';
+import { useSelector } from 'react-redux';
+import { db, doc } from '../../FirebaseConfig';
+import { onSnapshot } from 'firebase/firestore';
+
+const SCREEN_HEIGHT = Dimensions.get('window').height;
+const SCREEN_WIDTH = Dimensions.get('window').width;
+
+const DestinationScreen = ({ navigation, route }) => {
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const tripData = useSelector(state => state.trip?.tripData); // Added optional chaining
+
+  // Safely access route params with default values
+  const { 
+    durationReached = false, 
+    tripAccepted = false, 
+    paymentConfirmed = false 
+  } = route.params || {};
+
+  const toggleDrawer = () => setDrawerOpen(!drawerOpen);
+
+  // Context with default values
+  const { originDriver = {} } = useContext(DriverOriginContext);
+  const { origin = {} } = useContext(OriginContext);
+  const { destination = {} } = useContext(DestinationContext);
+
+  // State initialization with fallbacks
+  const [userOrigin] = useState({
+    latitude: origin?.latitude || null,
+    longitude: origin?.longitude || null,
+  });
+
+  const [driverLocation] = useState({   
+    latitude: originDriver?.latitude || null,
+    longitude: originDriver?.longitude || null,
+  });
+
+  const [eta, setEta] = useState(null);
+  const [distance, setDistance] = useState(null);
+
+  useEffect(() => {
+    const backHandler = BackHandler.addEventListener(
+      'hardwareBackPress',
+      () => true
+    );
+    return () => backHandler.remove();
+  }, []);
+
+  useEffect(() => {
+    if (!tripAccepted || !paymentConfirmed) {
+      navigation.navigate('TripLoadingResponse', { durationReacheds: false });
+    }
+  }, [tripAccepted, paymentConfirmed, navigation]);
+
+  useEffect(() => {
+    const fetchRouteDetails = async () => {
+      try {
+        if (!userOrigin.latitude || !driverLocation.latitude) return;
+
+        const response = await axios.get(
+          `https://maps.googleapis.com/maps/api/directions/json`,
+          {
+            params: {
+              origin: `${userOrigin.latitude},${userOrigin.longitude}`,
+              destination: `${driverLocation.latitude},${driverLocation.longitude}`,
+              key: GOOGLE_MAPS_APIKEY,
+            },
+          }
+        );
+
+        const firstRoute = response.data?.routes?.[0];
+        const firstLeg = firstRoute?.legs?.[0];
+        
+        if (firstLeg) {
+          setEta(firstLeg.duration?.text || 'N/A');
+          setDistance(firstLeg.distance?.text || 'N/A');
+        }
+      } catch (error) {
+        console.error("Error fetching route details:", error);
+      }
+    };
+
+    fetchRouteDetails();
+  }, [userOrigin, driverLocation]);
+
+  const handleNavigation = () => {
+    if (destination?.latitude && destination?.longitude && tripData) {
+      navigation.navigate('DriverInfoBottomSheet', {
+        durationReacheds: true,
+        driver_id: tripData?.driver_id, // Optional chaining
+        tripAccepted: tripData?.tripAccepted, // Optional chaining
+      });
+    }
+  };
+  useEffect(() => {
+    // Ensure tripId is a string
+    const tripId = tripData?.tripId ? String(tripData.tripId) : null; // Convert tripId to string if it exists
+
+    // Check if durationReached is true and tripId exists and is a string
+    if (!durationReached || !tripId) {
+      console.log("Invalid tripId or waiting for status updates.", tripData?.tripId);
+      return; // Don't proceed if tripId is invalid or doesn't exist
+    }
+
+    console.log("Trip started, listening for status changes...");
+
+    // Now that we've validated that tripId is a string, use it in doc()
+    const tripRef = doc(db, "trips", tripId);
+
+    const unsubscribe = onSnapshot(tripRef, (docSnapshot) => {
+      if (docSnapshot.exists()) {
+        const tripStatus = docSnapshot.data()?.statuses;
+
+        // Check if the trip status is "accepted"
+        if (tripStatus === "accepted") {
+          console.log("Trip accepted.");
+          alert("Your trip has been accepted!"); // Alert the user when trip status is accepted
+        } else if (tripStatus === "trip started") {
+          console.log("Trip has started. Waiting for further status updates...");
+        } else {
+          console.log("Current trip status:", tripStatus);
+        }
+      } else {
+        console.log("Trip document not found.");
+      }
+    });
+
+    // Cleanup the listener when component unmounts or tripId/durationReached changes
+    return () => unsubscribe();
+  }, [tripData?.tripId, durationReached]); // Re-run when tripId or durationReached changes
+
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <TouchableWithoutFeedback onPress={() => drawerOpen && setDrawerOpen(false)}>
+        <View style={{ flex: 1 }}>
+          <View style={styles.header}>
+            <TouchableOpacity onPress={toggleDrawer} style={styles.roundButton}>
+              <Icon type="material-community" name="menu" color={colors.black} size={30} />
+            </TouchableOpacity>
+          </View>
+
+          {drawerOpen && <CustomDrawer isOpen={drawerOpen} toggleDrawer={toggleDrawer} navigation={navigation} />}
+
+          <TouchableOpacity
+            style={styles.profilePictureContainer}
+            onPress={() => navigation.navigate('DriverCommunicationBottomSheet')}
+          >
+            <Image source={require('../../assets/call.png')} style={styles.profilePicture} />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.rectangleButton} onPress={handleNavigation}>
+            <Text style={styles.buttonText}>View Driver</Text>
+          </TouchableOpacity>
+
+          {tripData?.driver_id && ( // Conditional rendering
+            <MapComponent 
+              driverLocation={driverLocation}
+              driverId={tripData.driver_id}
+              userOrigin={tripAccepted ? userOrigin : null}
+            />
+          )}
+        </View>
+      </TouchableWithoutFeedback>
+    </SafeAreaView>
+  );
+};
+
+export default DestinationScreen;
+
+
+  const handleSubmit = async () => {
+    const requiredFields = ["flightDate", "numberOfPassengers", "departurePoint", "destination"]
+    const missingFields = requiredFields.filter((field) => !form[field])
+
+    if (missingFields.length > 0) {
+      Alert.alert("Missing Information", "Please fill in all required fields.")
+      return
+    }
+
+    try {
+      await axios.post(api + "helicopter_quotes", {
+        // Mocked
+        user_id: userId,
+        ...form,
+      })
+
+      Alert.alert("Quote Request Submitted", "We will contact you shortly with your helicopter charter quote!")
+
+      setForm({
+        flightDate: "",
+        numberOfPassengers: "",
+        passengerWeights: "",
+        luggageWeight: "",
+        departurePoint: "",
+        destination: "",
+        isReturnFlight: "",
+        waitingTime: "",
+      })
+    } catch (error) {
+      console.error("Error submitting quote:", error)
+      Alert.alert("Error", "Failed to submit quote. Please try again.")
+    }
+  }
+
+
+
+
+
+
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+"use client"
+
+import { useState, useEffect } from "react"
+import {
+  ScrollView,
+  Text,
+  View,
+  TextInput,
+  TouchableOpacity,
+  ActivityIndicator,
+  Image,
+  StyleSheet,
+  StatusBar,
+  KeyboardAvoidingView,
+  Platform,
+  Keyboard,
+  TouchableWithoutFeedback,
+} from "react-native"
+import { Icon } from "react-native-elements"
+import { LinearGradient } from "expo-linear-gradient" // Import LinearGradient
+import { auth, db } from "../../FirebaseConfig"
+import { signInWithEmailAndPassword, onAuthStateChanged } from "firebase/auth"
+import { useDispatch } from "react-redux"
+import { setUser } from "../redux/actions/authActions" // Import the setUser action
+import AsyncStorage from "@react-native-async-storage/async-storage"
+import { doc, getDoc } from "firebase/firestore"
+import axios from "axios"
+import { api } from "../../api"
+
+const LoginScreen = ({ navigation }) => {
+  const [showPassword, setShowPassword] = useState(false)
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [loading, setLoading] = useState(true) // Initial loading state
+  const [authenticating, setAuthenticating] = useState(false) // For login button loading
+  const dispatch = useDispatch() // Redux dispatch function
+  const [user_Id, setUser_Id] = useState(null)
+  const [userId, setUserId] = useState(null)
+  const [userAuth, setUserAuth] = useState(null)
+
+  // Check if user is already signed in
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        dispatch(
+          setUser({
+            name: user.displayName,
+            email: user.email,
+            id: user.uid,
+          }),
+        ) // Store user details in Redux
+        navigation.replace("DrawerNavigator")
+      } else {
+        setLoading(false)
+      }
+    })
+
+    return () => unsubscribe()
+  }, [navigation, dispatch])
+
+  const signIn = async () => {
+    setAuthenticating(true)
+    try {
+      const userCredential = await signInWithEmailAndPassword(auth, email, password)
+      const user = userCredential.user
+
+      // Ensure email verification status is up-to-date
+      await user.reload()
+
+      if (!user.emailVerified) {
+        alert("Please verify your email before logging in.")
+        navigation.navigate("ProtectedScreen")
+        return
+      }
+
+      // Retrieve user data from Firestore
+      const userRef = doc(db, "users", user.uid)
+      const userDoc = await getDoc(userRef)
+
+      if (!userDoc.exists()) {
+        alert("User not found.")
+        return
+      }
+
+      const userData = userDoc.data()
+      console.log("User data from Firestore:", userData)
+
+      // Check if the user is a driver
+      if (userData.role !== "user") {
+        alert("Only customers are allowed to log in.")
+        navigation.replace("LogoutPage")
+        return
+      }
+
+      // Store user details in AsyncStorage
+      await AsyncStorage.setItem("userId", user.uid)
+      await AsyncStorage.setItem("emailVerified", "true")
+
+      setUserId(user.uid)
+      setUserAuth(user)
+
+      // Dispatch user details to Redux
+      dispatch(
+        setUser({
+          name: user.displayName,
+          email: user.email,
+          id: user.uid,
+          role: userData.role,
+        }),
+      )
+
+      // Call fetchCustomerUserID and pass user and userData
+      fetchCustomerUserID(user, userData) // Pass both user and userData here
+    } catch (error) {
+      console.log(error)
+      alert("Sign in failed, please check your email and password")
+    } finally {
+      setAuthenticating(false)
+    }
+  }
+
+  const fetchCustomerUserID = async (user, userData) => {
+    try {
+      const response = await axios.post(api + "login", {
+        email,
+      })
+      console.log("user_id Response:", response.data)
+
+      const user_id = response.data.id
+      setUser_Id(user_id)
+      console.log("user_id:", user_id, "customer_code:", response.data.customer_code)
+
+      // Dispatch updated user data to Redux with user_id and userData (role)
+      dispatch(
+        setUser({
+          name: user.displayName, // Use user data passed from signIn
+          email: user.email,
+          id: user.uid,
+          role: userData.role, // Use role from userData
+          user_id: user_id, // Add user_id from API response
+          customer_code: response.data?.customer_code, // Add customer_code from userData
+        }),
+      )
+    } catch (error) {
+      console.error("Error fetching driver id:", error)
+    }
+  }
+
+  return (
+    <KeyboardAvoidingView style={styles.fullScreenContainer} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      <StatusBar barStyle="light-content" backgroundColor="#0B131C" />
+      <LinearGradient
+        colors={["#212A34", "#18202A", "#0B131C"]} // Darkest to slightly lighter, then to the specified end color
+        start={{ x: 0, y: 0.5 }} // Start from left
+        end={{ x: 1, y: 0.5 }} // End to right
+        style={styles.gradientBackground}
+      >
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <View style={styles.fullScreenContent}>
+            <Image
+              source={require("../../assets/car-login-bg.png")}
+              style={styles.carImageBackground}
+              resizeMode="cover"
+            />
+
+            <ScrollView contentContainerStyle={styles.scrollViewContent} keyboardShouldPersistTaps="handled">
+              <View style={styles.header}>
+                <Text style={styles.title}>Welcome Back</Text>
+                <Text style={styles.subtitle}>Sign in to continue to NTHOME</Text>
+              </View>
+
+              <View style={styles.formContainer}>
+                <View style={styles.inputGroup}>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Email"
+                    placeholderTextColor="#A0AEC0"
+                    keyboardType="email-address"
+                    value={email}
+                    onChangeText={setEmail}
+                  />
+                </View>
+                <View style={styles.inputGroup}>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Password"
+                    placeholderTextColor="#A0AEC0"
+                    secureTextEntry={!showPassword}
+                    value={password}
+                    onChangeText={setPassword}
+                  />
+                  <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeIcon}>
+                    <Icon name={showPassword ? "eye-off" : "eye"} type="feather" size={20} color="#A0AEC0" />
+                  </TouchableOpacity>
+                </View>
+
+                <TouchableOpacity style={styles.forgotPasswordButton}>
+                  <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.signInButton, authenticating && styles.signInButtonDisabled]}
+                  onPress={signIn}
+                  disabled={authenticating}
+                >
+                  {authenticating ? (
+                    <ActivityIndicator size="small" color="white" />
+                  ) : (
+                    <Text style={styles.signInButtonText}>Sign In</Text>
+                  )}
+                </TouchableOpacity>
+
+                <View style={styles.orContainer}>
+                  <View style={styles.separator} />
+                  <Text style={styles.orText}>Or sign in with</Text>
+                  <View style={styles.separator} />
+                </View>
+
+                <View style={styles.socialButtonsContainer}>
+                  <TouchableOpacity style={styles.socialButton}>
+                    <Image source={require("../../assets/icons/google.png")} style={styles.socialIcon} />
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.socialButton}>
+                    <Image source={require("../../assets/icons/facebook.png")} style={styles.socialIcon} />
+                  </TouchableOpacity>
+                </View>
+
+                <Text style={styles.signUpText}>
+                  Don't have an account?{" "}
+                  <Text style={styles.signUpLink} onPress={() => navigation.navigate("SignUp")}>
+                    Sign Up
+                  </Text>
+                </Text>
+              </View>
+            </ScrollView>
+          </View>
+        </TouchableWithoutFeedback>
+      </LinearGradient>
+    </KeyboardAvoidingView>
+  )
+}
+
+const styles = StyleSheet.create({
+  fullScreenContainer: {
+    flex: 1,
+  },
+  gradientBackground: {
+    flex: 1,
+  },
+  fullScreenContent: {
+    flex: 1,
+  },
+  carImageBackground: {
+    position: "absolute",
+    top: 0,
+    width: "100%",
+    height: 300, // Adjusted height to match the image
+    resizeMode: "cover",
+  },
+  scrollViewContent: {
+    flexGrow: 1,
+    paddingTop: 200, // Adjust padding to position content below the car image
+    paddingHorizontal: 24,
+    justifyContent: "flex-end", // Push content to the bottom
+  },
+  header: {
+    alignItems: "center",
+    marginBottom: 32,
+  },
+  title: {
+    fontSize: 32,
+    fontWeight: "bold",
+    color: "#FFFFFF", // White text
+    marginBottom: 8,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: "#CBD5E0", // Light gray text
+    textAlign: "center",
+  },
+  formContainer: {
+    backgroundColor: "transparent", // Transparent background for the form area
+    width: "100%",
+    alignSelf: "center",
+  },
+  inputGroup: {
+    backgroundColor: "#2D3748", // Darker background for input fields
+    borderRadius: 12,
+    marginBottom: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    height: 56,
+    borderWidth: 1,
+    borderColor: "#4A5568", // Subtle border color
+  },
+  input: {
+    flex: 1,
+    height: "100%",
+    color: "#FFFFFF", // White text for input
+    fontSize: 16,
+  },
+  eyeIcon: {
+    paddingLeft: 10,
+  },
+  forgotPasswordButton: {
+    alignSelf: "flex-end",
+    marginBottom: 24,
+  },
+  forgotPasswordText: {
+    fontSize: 14,
+    color: "#63B3ED", // Light blue for links
+  },
+  signInButton: {
+    backgroundColor: "#3182CE", // Blue button color
+    borderRadius: 12,
+    height: 56,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 24,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 8,
+  },
+  signInButtonDisabled: {
+    backgroundColor: "#4A5568", // Disabled state color
+  },
+  signInButtonText: {
+    color: "white",
+    fontSize: 18,
+    fontWeight: "bold",
+  },
+  orContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 24,
+  },
+  separator: {
+    flex: 1,
+    height: 1,
+    backgroundColor: "#4A5568", // Separator line color
+    marginHorizontal: 8,
+  },
+  orText: {
+    color: "#A0AEC0", // Light gray text
+    fontSize: 14,
+  },
+  socialButtonsContainer: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 24,
+    marginBottom: 32,
+  },
+  socialButton: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#2D3748", // Dark background for social buttons
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#4A5568", // Subtle border
+  },
+  socialIcon: {
+    width: 28,
+    height: 28,
+    resizeMode: "contain",
+  },
+  signUpText: {
+    textAlign: "center",
+    fontSize: 16,
+    color: "#CBD5E0", // Light gray text
+    marginBottom: 24,
+  },
+  signUpLink: {
+    color: "#63B3ED", // Light blue for links
+    fontWeight: "bold",
+  },
+})
+
+export default LoginScreen
+
+
+
+
+import React from "react";
+import {
+  View,
+  Text,
+  TextInput,
+  StyleSheet,
+  TouchableOpacity,
+  FlatList,
+  ScrollView,
+  Image,
+  Dimensions,
+  ImageBackground,
+} from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+
+// Get screen dimensions for responsive design
+const { width } = Dimensions.get("window");
+
+// Constants for card sizing
+const POPULAR_CARD_WIDTH = width * 0.4; // Smaller cards for popular section
+const POPULAR_CARD_SPACING = 15;
+const OFFER_CARD_WIDTH = width * 0.7; // Wider cards for offers
+const OFFER_CARD_SPACING = 15;
+
+// Placeholder image for the header background
+const HEADER_BACKGROUND_IMAGE = 'https://v0.dev/placeholder.svg?height=300&width=400';
+
+// Sample data
+const services = [
+  {
+    id: "1",
+    title: "Flight Booking",
+    description: "Book domestic and international flights instantly.",
+    icon: <Ionicons name="airplane" size={28} color="#0DCAF0" />,
+  },
+  {
+    id: "2",
+    title: "Lounge Access",
+    description: "Enjoy premium lounges at major airports.",
+    icon: <Ionicons name="cafe" size={28} color="#0DCAF0" />,
+  },
+  {
+    id: "3",
+    title: "Travel Insurance",
+    description: "Secure your trip with comprehensive coverage.",
+    icon: <Ionicons name="shield-checkmark" size={28} color="#0DCAF0" />,
+  },
+  {
+    id: "4",
+    title: "Visa Assistance",
+    description: "Get help with your visa applications.",
+    icon: <Ionicons name="document-text" size={28} color="#0DCAF0" />,
+  },
+];
+
+const popularDestinations = [
+  { id: "1", city: "Paris", image: 'https://v0.dev/placeholder.svg?height=150&width=150' },
+  { id: "2", city: "Singapore", image: 'https://v0.dev/placeholder.svg?height=150&width=150' },
+  { id: "3", city: "Sydney", image: 'https://v0.dev/placeholder.svg?height=150&width=150' },
+  { id: "4", city: "New York", image: 'https://v0.dev/placeholder.svg?height=150&width=150' },
+  { id: "5", city: "Tokyo", image: 'https://v0.dev/placeholder.svg?height=150&width=150' },
+];
+
+const recentSearches = [
+  { id: "1", term: "London, UK" },
+  { id: "2", term: "Dubai, UAE" },
+  { id: "3", term: "Rome, Italy" },
+  { id: "4", term: "Bangkok, Thailand" },
+];
+
+const exclusiveOffers = [
+  {
+    id: "1",
+    title: "Summer Getaway",
+    description: "Up to 30% off on flights to Europe!",
+    discount: "30% OFF",
+    image: 'https://v0.dev/placeholder.svg?height=180&width=280',
+  },
+  {
+    id: "2",
+    title: "Luxury Stays",
+    description: "Exclusive deals on 5-star hotels.",
+    discount: "20% OFF",
+    image: 'https://v0.dev/placeholder.svg?height=180&width=280',
+  },
+  {
+    id: "3",
+    title: "Family Fun",
+    description: "Kids fly free to select destinations!",
+    discount: "FREE KIDS",
+    image: 'https://v0.dev/placeholder.svg?height=180&width=280',
+  },
+];
+
+const HomeScreen = () => {
+  return (
+    <View style={styles.fullScreenContainer}>
+      {/* Header with Image Background and Overlay */}
+      <ImageBackground source={{ uri: HEADER_BACKGROUND_IMAGE }} style={styles.headerBackground}>
+        <View style={styles.headerOverlay}>
+          <View style={styles.headerTop}>
+            <Text style={styles.logo}>Nthome</Text>
+            <Ionicons name="person-circle-outline" size={32} color="#fff" />
+          </View>
+          <View style={styles.heroContent}>
+            <Text style={styles.title}>
+              Where are you <Text style={styles.titleAccent}>going to?</Text>
+            </Text>
+            <View style={styles.searchBox}>
+              <Ionicons name="search" size={20} color="#9CA3AF" style={{ marginRight: 8 }} />
+              <TextInput
+                style={styles.input}
+                placeholder="Serach for flights or services"
+                placeholderTextColor="#9CA3AF"
+              />
+            </View>
+          </View>
+        </View>
+      </ImageBackground>
+
+      {/* Bottom Sheet Section */}
+      <View style={styles.bottomSheet}>
+        <ScrollView
+          style={styles.scrollViewContent}
+          contentContainerStyle={{ paddingBottom: 30 }}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Services Section */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Services</Text>
+            <View style={styles.servicesGrid}>
+              {services.map((service) => (
+                <TouchableOpacity key={service.id} style={styles.serviceCard}>
+                  <View style={styles.serviceIcon}>{service.icon}</View>
+                  <View style={styles.serviceTextContainer}>
+                    <Text style={styles.serviceCardTitle}>{service.title}</Text>
+                    <Text style={styles.serviceCardDesc}>{service.description}</Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          {/* Popular Destinations Slider */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Popular Destinations</Text>
+            <FlatList
+              data={popularDestinations}
+              keyExtractor={(item) => item.id}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: POPULAR_CARD_SPACING / 2 }}
+              snapToInterval={POPULAR_CARD_WIDTH + POPULAR_CARD_SPACING}
+              decelerationRate="fast"
+              renderItem={({ item }) => (
+                <TouchableOpacity style={styles.popularCard}>
+                  <Image source={{ uri: item.image }} style={styles.popularImage} />
+                  <Text style={styles.popularCity}>{item.city}</Text>
+                </TouchableOpacity>
+              )}
+            />
+          </View>
+
+          {/* Recent Searches Section */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Recent Searches</Text>
+            <FlatList
+              data={recentSearches}
+              keyExtractor={(item) => item.id}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: 0 }}
+              renderItem={({ item }) => (
+                <TouchableOpacity style={styles.recentSearchTag}>
+                  <Text style={styles.recentSearchText}>{item.term}</Text>
+                </TouchableOpacity>
+              )}
+            />
+          </View>
+
+          {/* Exclusive Offers Section */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Exclusive Offers</Text>
+            <FlatList
+              data={exclusiveOffers}
+              keyExtractor={(item) => item.id}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: OFFER_CARD_SPACING / 2 }}
+              snapToInterval={OFFER_CARD_WIDTH + OFFER_CARD_SPACING}
+              decelerationRate="fast"
+              renderItem={({ item }) => (
+                <TouchableOpacity style={styles.offerCard}>
+                  <Image source={{ uri: item.image }} style={styles.offerImage} />
+                  <View style={styles.offerContent}>
+                    <Text style={styles.offerDiscount}>{item.discount}</Text>
+                    <Text style={styles.offerTitle}>{item.title}</Text>
+                    <Text style={styles.offerDescription}>{item.description}</Text>
+                  </View>
+                </TouchableOpacity>
+              )}
+            />
+          </View>
+        </ScrollView>
+      </View>
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  fullScreenContainer: {
+    flex: 1,
+    backgroundColor: '#f0f2f5', // Background for the entire screen
+  },
+  headerBackground: {
+    width: '100%',
+    height: 300, // Increased height to accommodate the bottom sheet overlap
+    justifyContent: 'flex-end',
+  },
+  headerOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)', // Dark overlay
+    justifyContent: 'space-between',
+    paddingTop: 50, // Adjust for status bar
+    paddingBottom: 20,
+  },
+  headerTop: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 20,
+  },
+  logo: {
+    color: "#fff",
+    fontSize: 22,
+    fontWeight: "bold",
+    letterSpacing: 1,
+  },
+  heroContent: {
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    marginBottom: 20, // Space before the bottom sheet starts
+  },
+  title: {
+    fontSize: 28,
+    color: "#fff",
+    fontWeight: "600",
+    marginBottom: 16,
+    textAlign: "center",
+  },
+  titleAccent: {
+    color: "#0DCAF0", // Accent color for "flying to?"
+    fontWeight: "bold",
+  },
+  searchBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
+    width: "100%",
+  },
+  input: {
+    flex: 1,
+    fontSize: 16,
+    color: "#1F2937",
+  },
+  bottomSheet: {
+    flex: 1,
+    backgroundColor: "#f0f2f5", // Background for the sheet content
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    marginTop: -50, // Overlap the header image
+    overflow: 'hidden', // Clip content to rounded corners
+  },
+  scrollViewContent: {
+    paddingTop: 20, // Padding inside the sheet
+  },
+  section: {
+    marginTop: 28,
+    paddingHorizontal: 20,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#1E40AF",
+    marginBottom: 15,
+  },
+  servicesGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+  },
+  serviceCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderRadius: 15,
+    padding: 15,
+    marginBottom: 15,
+    width: '48%', // Two cards per row
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 5,
+    elevation: 3,
+  },
+  serviceIcon: {
+    marginRight: 12,
+  },
+  serviceTextContainer: {
+    flex: 1,
+  },
+  serviceCardTitle: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#1F2937",
+    marginBottom: 2,
+  },
+  serviceCardDesc: {
+    color: "#6B7280",
+    fontSize: 12,
+  },
+  popularCard: {
+    width: POPULAR_CARD_WIDTH,
+    marginHorizontal: POPULAR_CARD_SPACING / 2,
+    backgroundColor: "#fff",
+    borderRadius: 18,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  popularImage: {
+    width: "100%",
+    height: 120,
+    resizeMode: "cover",
+  },
+  popularCity: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#1F2937",
+    padding: 12,
+    textAlign: "center",
+  },
+  recentSearchTag: {
+    backgroundColor: '#E0F7FA', // Light blue background
+    borderRadius: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 15,
+    marginRight: 10,
+    borderWidth: 1,
+    borderColor: '#B2EBF2',
+  },
+  recentSearchText: {
+    color: '#00796B', // Darker teal text
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  offerCard: {
+    width: OFFER_CARD_WIDTH,
+    marginHorizontal: OFFER_CARD_SPACING / 2,
+    backgroundColor: "#fff",
+    borderRadius: 18,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  offerImage: {
+    width: "100%",
+    height: 150,
+    resizeMode: "cover",
+  },
+  offerContent: {
+    padding: 15,
+  },
+  offerDiscount: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#E65100", // Orange for discount
+    marginBottom: 5,
+  },
+  offerTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#1F2937",
+    marginBottom: 5,
+  },
+  offerDescription: {
+    fontSize: 13,
+    color: "#6B7280",
+  },
+});
+
+export default HomeScreen;
+
+
+          {/* Drivers Around You Map Section */}
+          {/* <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Drivers Around You</Text>
+            <View style={styles.mapCard}>
+              {mapError ? (
+                <View style={[styles.map, styles.mapLoading]}>
+                  <MaterialCommunityIcons name="map-marker-alert" color="#666" size={48} />
+                  <Text style={styles.errorText}>Unable to load map</Text>
+                </View>
+              ) : !latlng || carsAround.length === 0 ? (
+                <View style={[styles.map, styles.mapLoading]}>
+                  <ActivityIndicator size="large" color="#007AFF" />
+                  <Text style={styles.loadingText}>Loading map...</Text>
+                </View>
+              ) : (
+                <MapView
+                  ref={_map}
+                  provider={PROVIDER_GOOGLE}
+                  style={styles.map}
+                  customMapStyle={mapStyle}
+                  showsUserLocation={true}
+                  followsUserLocation={false}
+                  initialRegion={{
+                    latitude: latlng.latitude,
+                    longitude: latlng.longitude,
+                    latitudeDelta: 0.008,
+                    longitudeDelta: 0.008,
+                  }}
+                  liteMode={true}
+                >
+                  {carsAround.slice(0, 5).map((item, index) => (
+                    <Marker coordinate={item} key={index.toString()}>
+                      <Image source={{ uri: CAR_MARKER_IMAGE }} style={styles.carsAround} resizeMode="contain" />
+                    </Marker>
+                  ))}
+                </MapView>
+              )}
+            </View>
+          </View> */}
