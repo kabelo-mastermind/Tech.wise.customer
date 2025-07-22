@@ -185,7 +185,7 @@ const DestinationScreen = ({ navigation, route }) => {
     // Connect the customer socket
     connectSocket(user_id, "customer")
 
-    // Listen for when the trip is accepted
+    // Listen for when the trip is accepted 
     listenToTripAccepted((data) => {
       // console.log("✅ Trip accepted:", data);
       // alert(`Your trip has been accepted! Trip ID: ${data.tripId}`);
