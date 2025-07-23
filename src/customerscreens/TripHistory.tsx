@@ -72,7 +72,15 @@ export default function MyRidesScreen({ navigation }) {
       const res = await axios.get(api + `tripHistory/${customerId}`, {
         params: { status: status },
       })
-      setTrips(res.data)
+
+      // Sort trips by requestDate (newest first)
+      const sortedTrips = [...res.data].sort((a, b) => {
+        const dateA = a.requestDate ? new Date(a.requestDate) : new Date(0)
+        const dateB = b.requestDate ? new Date(b.requestDate) : new Date(0)
+        return dateB - dateA // Descending order
+      })
+
+      setTrips(sortedTrips)
       setHasError(false)
     } catch (err) {
       setHasError(true)

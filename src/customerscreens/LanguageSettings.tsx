@@ -81,28 +81,39 @@ const LanguageSettings = ({ navigation }) => {
         <Text style={styles.sectionTitle}>Select Language</Text>
 
         <View style={styles.languageList}>
-          {languages.map((language) => (
-            <TouchableOpacity
-              key={language.code}
-              onPress={() => selectLanguage(language.name)}
-              style={[styles.languageCard, selectedLanguage === language.name && styles.selectedLanguageCard]}
-              activeOpacity={0.7}
-            >
-              <View style={styles.languageInfo}>
-                <View style={[styles.flagIconContainer, { backgroundColor: language.iconColor + "15" }]}>
-                  <Icon name={language.icon} type={language.iconType} size={20} color={language.iconColor} />
-                </View>
-                <View style={styles.languageTextContainer}>
-                  <Text style={styles.languageName}>{language.name}</Text>
-                  <Text style={styles.nativeName}>{language.nativeName}</Text>
-                </View>
-              </View>
+          {languages.map((language) => {
+            // If language is not English, disable touch
+            const disabled = language.name !== "English"
 
-              <View style={[styles.radioButton, selectedLanguage === language.name && styles.selectedRadioButton]}>
-                {selectedLanguage === language.name && <View style={styles.radioButtonInner} />}
-              </View>
-            </TouchableOpacity>
-          ))}
+            return (
+              <TouchableOpacity
+                key={language.code}
+                onPress={() => !disabled && selectLanguage(language.name)}
+                style={[
+                  styles.languageCard,
+                  selectedLanguage === language.name && styles.selectedLanguageCard,
+                  disabled && { opacity: 0.5 }, // visually indicate disabled state
+                ]}
+                activeOpacity={disabled ? 1 : 0.7}
+                disabled={disabled}
+              >
+                <View style={styles.languageInfo}>
+                  <View style={[styles.flagIconContainer, { backgroundColor: language.iconColor + "15" }]}>
+                    <Icon name={language.icon} type={language.iconType} size={20} color={language.iconColor} />
+                  </View>
+                  <View style={styles.languageTextContainer}>
+                    <Text style={styles.languageName}>{language.name}</Text>
+                    <Text style={styles.nativeName}>{language.nativeName}</Text>
+                  </View>
+                </View>
+
+                <View style={[styles.radioButton, selectedLanguage === language.name && styles.selectedRadioButton]}>
+                  {selectedLanguage === language.name && <View style={styles.radioButtonInner} />}
+                </View>
+              </TouchableOpacity>
+            )
+          })}
+
         </View>
 
         <TouchableOpacity style={styles.applyButton}>

@@ -51,7 +51,7 @@ const colors = {
   statusCancelled: "#F56565",
   shadowColor: "#000000",
 }
-
+// InfoCard component for displaying information cards
 const InfoCard = ({ icon, title, description }) => (
   <View style={styles.infoCard}>
     <View style={styles.infoIconContainer}>{icon}</View>
@@ -78,7 +78,7 @@ const isSameWeek = (date, now) => {
 }
 
 const isSameMonth = (d1, d2) => d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth()
-
+// Function to format date and time from ISO string
 const formatDateTime = (isoString) => {
   if (!isoString) return "N/A"
   try {
@@ -116,14 +116,18 @@ const BookingList = ({ navigation, route }) => {
         .get(api + "helicopter_quotes/" + userIdGlobal)
         .then((res) => setBookings(Array.isArray(res.data) ? res.data : []))
         .catch(() => Alert.alert("Error", "Error loading bookings"))
-        .finally(() => setLoading(false))
+        .finally(() => setLoading(false)
+        )
     }, [userIdGlobal]),
   )
 
   const now = new Date()
   const filteredBookings = useMemo(() => {
+    const now = new Date();
     const query = searchQuery.trim().toLowerCase()
-    return bookings.filter((booking) => {
+
+
+    const filtered = bookings.filter((booking) => {
       if (!booking.created_at) return false
       const createdAt = new Date(booking.created_at)
       let dateMatch = true
@@ -152,6 +156,16 @@ const BookingList = ({ navigation, route }) => {
 
       return dateMatch && searchMatch && statusMatch
     })
+    // Sort bookings by created_at (newest first)
+    return filtered.sort((a, b) => {
+      if (!a.created_at && !b.created_at) return 0;
+      if (!a.created_at) return 1; // Put a at end
+      if (!b.created_at) return -1; // Put b at end
+
+      const dateA = new Date(a.created_at);
+      const dateB = new Date(b.created_at);
+      return dateB - dateA; // Descending order
+    });
   }, [bookings, filter, searchQuery, selectedStatusFilter]) // Add selectedStatusFilter to dependencies
 
   const formatDate = (dateStr) => {
