@@ -129,7 +129,7 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ navigation }) => {
                     style={styles.logoImage}
                     resizeMode="contain"
                   />
-                  <Text style={styles.logoText}>nthomeAir</Text>
+                  <Text style={styles.logoText}>NthomeAir</Text>
                   <View style={styles.logoAccent} />
                 </View>
               </Animated.View>
