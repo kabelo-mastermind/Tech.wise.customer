@@ -518,7 +518,7 @@ const DestinationScreen = ({ navigation, route }) => {
             </TouchableOpacity>
           </View>
 
-          {tripStatus === "accepted" || tripStatus === "arrived" && (
+          {tripStatus !== "accepted" && (
             <TouchableOpacity
               style={styles.profilePictureContainer}
               onPress={() => navigation.navigate("DriverCommunicationBottomSheet")}

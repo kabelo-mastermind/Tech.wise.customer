@@ -39,27 +39,35 @@ const DriverMarker = memo(({ coordinate }) => (
 const MapComponent = ({ userOrigin, userDestination, driverLocation }) => {
   const dispatch = useDispatch()
   const mapRef = useRef(null)
-
+ 
   // Optimize map centering with useCallback
-  const centerMap = useCallback(() => {
-    if (!mapRef.current) return
+const centerMap = useCallback(() => {
+  if (!mapRef.current) return;
 
-    if (driverLocation?.latitude && driverLocation?.longitude) { 
-      mapRef.current.animateToRegion({
-        latitude: driverLocation.latitude,
-        longitude: driverLocation.longitude,
-        latitudeDelta: 0.005,
-        longitudeDelta: 0.005,
-      })
-    } else if (userOrigin?.latitude && userOrigin?.longitude) {
-      mapRef.current.animateToRegion({
-        latitude: userOrigin.latitude,
-        longitude: userOrigin.longitude,
-        latitudeDelta: 0.005,
-        longitudeDelta: 0.005,
-      })
-    }
-  }, [driverLocation, userOrigin])
+  if (userDestination?.latitude && userDestination?.longitude) {
+    mapRef.current.animateToRegion({
+      latitude: userDestination.latitude,
+      longitude: userDestination.longitude,
+      latitudeDelta: 0.005,
+      longitudeDelta: 0.005,
+    });
+  } else if (driverLocation?.latitude && driverLocation?.longitude) {
+    mapRef.current.animateToRegion({
+      latitude: driverLocation.latitude,
+      longitude: driverLocation.longitude,
+      latitudeDelta: 0.005,
+      longitudeDelta: 0.005,
+    });
+  } else if (userOrigin?.latitude && userOrigin?.longitude) {
+    mapRef.current.animateToRegion({
+      latitude: userOrigin.latitude,
+      longitude: userOrigin.longitude,
+      latitudeDelta: 0.005,
+      longitudeDelta: 0.005,
+    });
+  }
+}, [userDestination, driverLocation, userOrigin]);
+
 
   // Optimize fitting coordinates with useCallback
   const fitCoordinates = useCallback(() => {

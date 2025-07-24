@@ -36,9 +36,9 @@ const DriverCommunicationBottomSheet = ({ navigation }) => {
           </TouchableOpacity>
 
           {/* Call Icon */}
-          <TouchableOpacity style={styles.iconCircle}>
+          {/* <TouchableOpacity style={styles.iconCircle}>
             <Icon name="call" type="material" size={30} color="#fff" />
-          </TouchableOpacity>
+          </TouchableOpacity> */}
 
           {/* Safety Icon */}
           <TouchableOpacity style={styles.iconCircle}>
