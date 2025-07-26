@@ -5,3 +5,4 @@ node_modules
 Music/
 My Music/
 .env
+*.log
