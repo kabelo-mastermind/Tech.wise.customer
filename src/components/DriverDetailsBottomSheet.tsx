@@ -168,9 +168,9 @@ const DriverDetailsBottomSheet = ({ navigation, route }) => {
           user_id: user_id,
         }
 
-        if (selectedPaymentMethod === "Cash") {
+        // if (selectedPaymentMethod === "Cash") {
           await axios.post(api + "payment", paymentData)
-        }
+        // }
 
         emitTripRequestToDrivers(tripData, extractedData.driverId)
         dispatch(setTripData(tripData))

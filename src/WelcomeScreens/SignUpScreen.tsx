@@ -13,6 +13,7 @@ export default function CreateAccount({ navigation }) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [isChecked, setIsChecked] = useState(false);
   // const [gender, setGender] = useState('');
 
   const signUp = async () => {
@@ -118,19 +119,36 @@ export default function CreateAccount({ navigation }) {
           </View>
 
           <View style={styles.checkboxContainer}>
-            <TouchableOpacity style={styles.checkbox} />
+            <TouchableOpacity
+              style={[
+                styles.checkbox,
+                isChecked && { backgroundColor: '#0DCAF0', borderColor: '#0DCAF0' }
+              ]}
+              onPress={() => setIsChecked(!isChecked)}
+            >
+              {isChecked && (
+                <Icon name="check" type="feather" size={16} color="white" />
+              )}
+            </TouchableOpacity>
             <Text style={styles.checkboxLabel}>
               Agree with{' '}
               <Text
                 style={styles.link}
-                onPress={() => Linking.openURL('#')}
+                onPress={() => navigation.navigate('TermsScreen')}
               >
                 Terms & Condition
               </Text>
             </Text>
           </View>
 
-          <TouchableOpacity style={styles.button} onPress={signUp} disabled={loading}>
+          <TouchableOpacity
+            style={[
+              styles.button,
+              (loading || !isChecked) && { backgroundColor: 'gray' }
+            ]}
+            onPress={signUp}
+            disabled={loading || !isChecked}
+          >
             {loading ? (
               <ActivityIndicator size="small" color="white" />
             ) : (

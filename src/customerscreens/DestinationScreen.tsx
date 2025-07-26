@@ -38,6 +38,7 @@ const SCREEN_WIDTH = Dimensions.get("window").width
 const DestinationScreen = ({ navigation, route }) => {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const tripData = useSelector((state) => state.trip?.tripData)
+  // console.log("DestinationScreen tripData---------:", tripData)
   const tripAmount = tripData.carData?.price ? Math.round(Number.parseFloat(tripData.carData.price) * 100) : 0
   //trip data from socket notification
   const [tripDataSocket, setTripData] = useState(null)
@@ -477,7 +478,7 @@ const DestinationScreen = ({ navigation, route }) => {
         durationReacheds: true,
         driver_id: String(driver_id || ""),
         tripStatusAccepted: tripStatusAccepted,
-      })
+      }) 
     }
   }
 
@@ -518,14 +519,14 @@ const DestinationScreen = ({ navigation, route }) => {
             </TouchableOpacity>
           </View>
 
-          {tripStatus !== "accepted" && (
+          {/* {tripStatus !== "accepted" && (
             <TouchableOpacity
               style={styles.profilePictureContainer}
               onPress={() => navigation.navigate("DriverCommunicationBottomSheet")}
             >
               <Image source={require("../../assets/call.png")} style={styles.profilePicture} />
             </TouchableOpacity>
-          )}
+          )} */}
           {/* Cancel Trip Icon positioned below the call button */}
           {tripStatus !== "started" && (
             < TouchableOpacity

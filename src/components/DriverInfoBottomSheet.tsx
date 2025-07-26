@@ -12,6 +12,8 @@ const { width, height } = Dimensions.get("window")
 const DriverInfoBlurView = ({ route, navigation }) => {
   const { tripAccepted } = route.params || {}
   const tripData = useSelector((state) => state.trip.tripData)
+  console.log("DriverInfoBlurView tripData2222222222222222222222:", tripData);
+
 
   const [driverDetails, setDriverDetails] = useState(null)
   const [carDetails, setCarDetails] = useState(null)
@@ -77,7 +79,7 @@ const DriverInfoBlurView = ({ route, navigation }) => {
       setCarImage(api + "public/carImages/placeholder.png")
     }
   }, [tripData])
-  console.log("Driver Data:", driver);
+  // console.log("Driver Data:", driver);
 
   const renderStars = (rating) => {
     if (!rating || rating === "No ratings yet") return "No ratings yet"
@@ -183,7 +185,7 @@ const DriverInfoBlurView = ({ route, navigation }) => {
                 </TouchableOpacity>
 
 
-                <TouchableOpacity style={[styles.actionButton, styles.messageButton]}>
+                <TouchableOpacity style={[styles.actionButton, styles.messageButton]} onPress={() => navigation.navigate("DriverCommunicationBottomSheet")}>
                   <Icon name="message-text" type="material-community" size={20} color="#FFFFFF" />
                   <Text style={styles.actionButtonText}>Message</Text>
                 </TouchableOpacity>

@@ -87,9 +87,9 @@ const centerMap = useCallback(() => {
       if (validCoordinates.length > 0) {
         mapRef.current.fitToCoordinates(validCoordinates, {
           edgePadding: {
-            top: 450,
+            top: 100,
             right: 50,
-            bottom: 350,
+            bottom: 100,
             left: 50,
           },
           animated: true,
@@ -105,8 +105,10 @@ const centerMap = useCallback(() => {
 
   // Effect for fitting coordinates
   useEffect(() => {
-    fitCoordinates()
-  }, [fitCoordinates])
+      if (userDestination?.latitude && userDestination?.longitude) {
+      fitCoordinates();
+    }
+  }, [userDestination,fitCoordinates])
 
   const initialRegion =
     userOrigin?.latitude && userOrigin?.longitude
