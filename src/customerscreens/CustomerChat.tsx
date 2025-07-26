@@ -22,12 +22,10 @@ const CustomerChat = () => {
   const [optionsVisible, setOptionsVisible] = useState(null)
   const flatListRef = useRef(null)
 
-  // Redux selectors
   const user_id = useSelector((state) => state.auth.user?.user_id || "")
   const driverId = useSelector((state) => state.trip.tripData?.driver_id || "")
   const trip_id = useSelector((state) => state.trip.tripData?.tripId || "")
 
-  // State for messages and input text
   const [messages, setMessages] = useState([])
   const [messageText, setMessageText] = useState("")
 
@@ -35,14 +33,14 @@ const CustomerChat = () => {
     if (user_id) {
       connectSocket(user_id, 'customer')
     }
-  
+
     const handleNewMessage = (incomingMessage) => {
       setMessages(prev => [...prev, incomingMessage])
-      console.log('Incoming message', incomingMessage);
+      console.log('Customer received message', incomingMessage);
     }
-  
+
     listenToChatMessages(handleNewMessage)
-  
+
     return () => {
       stopListeningToChatMessages()
     }
@@ -73,7 +71,7 @@ const CustomerChat = () => {
     if (!editedMessageText.trim()) return
 
     setMessages(prev =>
-      prev.map(msg => 
+      prev.map(msg =>
         msg.id === selectedMessageId ? { ...msg, message: editedMessageText } : msg
       )
     )
@@ -115,17 +113,22 @@ const CustomerChat = () => {
 
   return (
     <View style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.headerText}>Customer Chat</Text>
+
+      </View>
+
       <FlatList
         ref={flatListRef}
         data={messages}
-        keyExtractor={(item) => item.id.toString()}
+        keyExtractor={(item, index) => item.id ? item.id.toString() : index.toString()}
         renderItem={({ item }) => (
           <View style={[
-            styles.messageBubble, 
+            styles.messageBubble,
             item.senderId === user_id ? styles.sentMessage : styles.receivedMessage
           ]}>
             <Text style={[
-              styles.messageText, 
+              styles.messageText,
               item.senderId === user_id ? styles.sentText : styles.receivedText
             ]}>
               {item.message}
@@ -161,7 +164,7 @@ const CustomerChat = () => {
                 >
                   <Text style={styles.optionText}>Edit</Text>
                 </TouchableOpacity>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.optionButton}
                   onPress={() => deleteMessage(item.id)}
                 >
@@ -182,8 +185,8 @@ const CustomerChat = () => {
           onChangeText={setMessageText}
           placeholderTextColor="#999"
         />
-        <TouchableOpacity 
-          style={styles.sendButton} 
+        <TouchableOpacity
+          style={styles.sendButton}
           onPress={sendMessage}
           disabled={!messageText.trim()}
         >
@@ -195,21 +198,21 @@ const CustomerChat = () => {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
             <Text style={styles.modalTitle}>Edit Message</Text>
-            <TextInput 
-              style={styles.modalInput} 
-              value={editedMessageText} 
+            <TextInput
+              style={styles.modalInput}
+              value={editedMessageText}
               onChangeText={setEditedMessageText}
               multiline
             />
             <View style={styles.modalButtons}>
-              <TouchableOpacity 
-                style={[styles.modalButton, styles.cancelButton]} 
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
                 onPress={() => setEditModalVisible(false)}
               >
                 <Text style={styles.buttonText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.modalButton, styles.saveButton]} 
+              <TouchableOpacity
+                style={[styles.modalButton, styles.saveButton]}
                 onPress={editMessage}
                 disabled={!editedMessageText.trim()}
               >
@@ -224,9 +227,20 @@ const CustomerChat = () => {
 }
 
 const styles = StyleSheet.create({
+  // Reuse the exact same styles from DriverChat to maintain consistency
   container: {
     flex: 1,
     backgroundColor: '#f5f5f5',
+  },
+  header: {
+    backgroundColor: '#007AFF',
+    padding: 15,
+    alignItems: 'center',
+  },
+  headerText: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: 'bold',
   },
   messageList: {
     padding: 15,
