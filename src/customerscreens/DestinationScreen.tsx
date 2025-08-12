@@ -13,7 +13,7 @@ import { SafeAreaView } from "react-native-safe-area-context"
 import CustomDrawer from "../components/CustomDrawer"
 import { useDispatch, useSelector } from "react-redux"
 import { db, doc } from "../../FirebaseConfig"
-import { onSnapshot } from "firebase/firestore"
+import { onSnapshot, Timestamp } from "firebase/firestore"
 import {
   connectSocket,
   emitTripCanceltToDrivers,
@@ -28,7 +28,7 @@ import {
 } from "../configSocket/socketConfig" // Import the new functions
 import TripCancelationModal from "../components/TripCancelationModal"
 import { api } from "../../api"
-import { setMessageData } from "../redux/actions/messageAction"
+import { addMessage, clearMessages } from "../redux/actions/messageAction"
 import WebView from "react-native-webview"
 import CancelAlertModal from "../components/CancelAlertModal"
 
@@ -47,6 +47,7 @@ const DestinationScreen = ({ navigation, route }) => {
   const driver_id = tripData?.driver_id
   // console.log("trip data6666666666666666", driver_id);
   const user_id = useSelector((state) => state.auth?.user.user_id)
+  const user_name = useSelector((state) => state.auth?.user.name)
   const userEmail = useSelector((state) => state.auth?.user.email)
   const dispatch = useDispatch()
   const trip_id = useSelector((state) => state.trip.tripData?.tripId || "")
@@ -227,6 +228,7 @@ const DestinationScreen = ({ navigation, route }) => {
 
       // alert(`Your trip has ended! Trip ID: ${data.tripId}`);
       setTripStatus("ended");
+      dispatch(clearMessages())
 
       // Navigate to RideRatingScreen
       navigation.navigate("RideRatingScreen", {
@@ -248,8 +250,12 @@ const DestinationScreen = ({ navigation, route }) => {
     listenToChatMessages((messageData) => {
       setNotificationCountChat((prevCount) => prevCount + 1)
       dispatch(
-        setMessageData({
-          message: messageData.message,
+        addMessage({
+          id: Date.now().toString(),
+          message: messageData?.message,
+          senderId: driver_id,
+          receiverId: user_id,
+          timestamp: messageData?.timestamp || Timestamp.now(),
         }),
       )
     })
@@ -303,7 +309,7 @@ const DestinationScreen = ({ navigation, route }) => {
         navigation.navigate("CarListingBottomSheet", { driverId: driver_id });
         setShowCancelAlert(true);
       }, 100);
-
+      dispatch(clearMessages())
       stopListeningToTripAccepted();
       stopListeningToTripDeclined();
     }
@@ -478,7 +484,7 @@ const DestinationScreen = ({ navigation, route }) => {
         durationReacheds: true,
         driver_id: String(driver_id || ""),
         tripStatusAccepted: tripStatusAccepted,
-      }) 
+      })
     }
   }
 
@@ -513,10 +519,30 @@ const DestinationScreen = ({ navigation, route }) => {
     <SafeAreaView style={styles.container}>
       <TouchableWithoutFeedback onPress={() => drawerOpen && setDrawerOpen(false)}>
         <View style={{ flex: 1 }}>
-          <View style={styles.header}>
-            <TouchableOpacity onPress={toggleDrawer} style={styles.roundButton}>
-              <Icon type="material-community" name="menu" color={colors.black} size={30} />
-            </TouchableOpacity>
+          <View style={styles.headerContainer}>
+            <View style={styles.header}>
+              {/* Left button */}
+              <View style={styles.iconWrapper}>
+                <TouchableOpacity onPress={toggleDrawer} style={styles.roundButton}>
+                  <Icon type="material-community" name="menu" color={colors.black} size={30} />
+                </TouchableOpacity>
+              </View>
+
+              {/* Title */}
+              <Text style={styles.headerTitle}>Enjoy your ride</Text>
+
+              {/* Right button OR placeholder */}
+              <View style={styles.iconWrapper}>
+                {tripStatus !== "started" ? (
+                  <TouchableOpacity
+                    style={styles.cancelButtonContainer}
+                    onPress={handleCancelTrip}
+                  >
+                    <Icon name="cancel" color="#0DCAF0" size={30} />
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            </View>
           </View>
 
           {/* {tripStatus !== "accepted" && (
@@ -528,14 +554,7 @@ const DestinationScreen = ({ navigation, route }) => {
             </TouchableOpacity>
           )} */}
           {/* Cancel Trip Icon positioned below the call button */}
-          {tripStatus !== "started" && (
-            < TouchableOpacity
-              style={[styles.profilePictureContainer, styles.cancelButtonContainer]}
-              onPress={handleCancelTrip}
-            >
-              <Icon name="cancel" color="#0DCAF0" size={30} /> {/* Cancel Icon */}
-            </TouchableOpacity>
-          )}
+
 
           <TouchableOpacity style={styles.rectangleButton} onPress={handleNavigation}>
             <Text style={styles.buttonText}>View Driver</Text>
@@ -569,29 +588,72 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#FFFFFF",
   },
-  header: {
+  headerContainer: {
     position: "absolute",
-    top: 30,
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "#fff",
+    paddingTop: 20, // to account for status bar
+    borderBottomLeftRadius: 15,
+    borderBottomRightRadius: 15,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 5,
+    elevation: 6,
+    zIndex: 20,
+  },
+  iconWrapper: {
+    width: 42, // same width as button for balance
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    zIndex: 10,
+    paddingHorizontal: 15,
+    paddingVertical: 12,
   },
+
   roundButton: {
-    width: 40,
-    height: 40,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 20,
+    width: 42,
+    height: 42,
+    backgroundColor: "#F7F7F7",
+    borderRadius: 21,
     justifyContent: "center",
     alignItems: "center",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.1,
     shadowRadius: 3,
-    elevation: 5,
+    elevation: 4,
   },
+
+  headerTitle: {
+    flex: 1,
+    textAlign: "center",
+    fontSize: 20,
+    fontWeight: "600",
+    color: "#111",
+    letterSpacing: 0.3,
+  },
+
+  cancelButtonContainer: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: "#FFF1F1",
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 4,
+  },
+
   profilePictureContainer: {
     position: "absolute",
     top: 40,
@@ -609,9 +671,9 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
     elevation: 5,
   },
-  cancelButtonContainer: {
-    top: 100, // Position below the call button
-  },
+  // cancelButtonContainer: {
+  //   top: 100, // Position below the call button
+  // },
   profilePicture: {
     width: 30,
     height: 30,

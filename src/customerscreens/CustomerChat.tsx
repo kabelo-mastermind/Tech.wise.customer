@@ -7,27 +7,34 @@ import {
   listenToChatMessages,
   emitChatMessage,
   stopListeningToChatMessages,
-  emitEditMessage,
-  listenToEditedMessages,
-  emitDeleteMessage,
-  listenToDeletedMessages,
   connectSocket,
 } from "../configSocket/socketConfig"
 import { useSelector } from "react-redux"
+import AsyncStorage from "@react-native-async-storage/async-storage"
+
+
 
 const CustomerChat = () => {
-  const [editModalVisible, setEditModalVisible] = useState(false)
-  const [editedMessageText, setEditedMessageText] = useState("")
-  const [selectedMessageId, setSelectedMessageId] = useState(null)
   const [optionsVisible, setOptionsVisible] = useState(null)
   const flatListRef = useRef(null)
 
   const user_id = useSelector((state) => state.auth.user?.user_id || "")
   const driverId = useSelector((state) => state.trip.tripData?.driver_id || "")
   const trip_id = useSelector((state) => state.trip.tripData?.tripId || "")
+  const messagesFromRedux = useSelector((state) => state.message?.messages || [])
+
+  console.log("messagesFromReduxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx:", messagesFromRedux);
 
   const [messages, setMessages] = useState([])
   const [messageText, setMessageText] = useState("")
+
+  // useEffect(() => {
+  //   AsyncStorage.clear(); // clear all persisted data
+  // }, []);
+  // 1. Sync local messages with Redux messages (chat history)
+  useEffect(() => {
+    setMessages(messagesFromRedux)
+  }, [messagesFromRedux])
 
   useEffect(() => {
     if (user_id) {
@@ -67,41 +74,6 @@ const CustomerChat = () => {
     }
   }
 
-  const editMessage = () => {
-    if (!editedMessageText.trim()) return
-
-    setMessages(prev =>
-      prev.map(msg =>
-        msg.id === selectedMessageId ? { ...msg, message: editedMessageText } : msg
-      )
-    )
-
-    emitEditMessage({
-      messageId: selectedMessageId,
-      newMessage: editedMessageText.trim(),
-      senderId: user_id,
-      receiverId: driverId,
-      timestamp: new Date().toISOString(),
-    })
-
-    setEditModalVisible(false)
-    setOptionsVisible(null)
-  }
-
-  const deleteMessage = (messageId) => {
-    Alert.alert("Delete Message", "Are you sure you want to delete this message?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        onPress: () => {
-          setMessages(prev => prev.filter(msg => msg.id !== messageId))
-          emitDeleteMessage({ messageId, senderId: user_id, receiverId: driverId })
-        },
-        style: "destructive",
-      },
-    ])
-    setOptionsVisible(null)
-  }
 
   useEffect(() => {
     if (flatListRef.current && messages.length > 0) {
@@ -115,65 +87,51 @@ const CustomerChat = () => {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerText}>Customer Chat</Text>
-
       </View>
 
       <FlatList
         ref={flatListRef}
         data={messages}
         keyExtractor={(item, index) => item.id ? item.id.toString() : index.toString()}
-        renderItem={({ item }) => (
-          <View style={[
-            styles.messageBubble,
-            item.senderId === user_id ? styles.sentMessage : styles.receivedMessage
-          ]}>
-            <Text style={[
-              styles.messageText,
-              item.senderId === user_id ? styles.sentText : styles.receivedText
+        renderItem={({ item }) => {
+          // Compare senderId and user_id as strings to avoid type issues
+          const isSent = String(item.senderId) === String(user_id)
+          return (
+            <View style={[
+              styles.messageBubble,
+              isSent ? styles.sentMessage : styles.receivedMessage
             ]}>
-              {item.message}
-            </Text>
-            <Text style={[
-              styles.timestamp,
-              item.senderId === user_id ? styles.sentTimestamp : styles.receivedTimestamp
-            ]}>
-              {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-            </Text>
-
-            {item.senderId === user_id && (
-              <TouchableOpacity
-                style={styles.optionsButton}
-                onPress={() => setOptionsVisible(optionsVisible === item.id ? null : item.id)}
-              >
-                <Icon name="more-vert" size={20} color={item.senderId === user_id ? "#fff" : "#333"} />
-              </TouchableOpacity>
-            )}
-
-            {optionsVisible === item.id && (
-              <View style={[
-                styles.optionsMenu,
-                item.senderId === user_id ? styles.sentOptionsMenu : styles.receivedOptionsMenu
+              <Text style={[
+                styles.messageText,
+                isSent ? styles.sentText : styles.receivedText
               ]}>
+                {item.message}
+              </Text>
+              <Text style={[
+                styles.timestamp,
+                isSent ? styles.sentTimestamp : styles.receivedTimestamp
+              ]}>
+                {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </Text>
+              {isSent && (
                 <TouchableOpacity
-                  style={styles.optionButton}
-                  onPress={() => {
-                    setSelectedMessageId(item.id)
-                    setEditedMessageText(item.message)
-                    setEditModalVisible(true)
-                  }}
+                  style={styles.optionsButton}
+                  onPress={() => setOptionsVisible(optionsVisible === item.id ? null : item.id)}
                 >
-                  <Text style={styles.optionText}>Edit</Text>
+                  <Icon name="more-vert" size={20} color="#fff" />
                 </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.optionButton}
-                  onPress={() => deleteMessage(item.id)}
-                >
-                  <Text style={styles.optionText}>Delete</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-        )}
+              )}
+              {optionsVisible === item.id && (
+                <View style={[
+                  styles.optionsMenu,
+                  isSent ? styles.sentOptionsMenu : styles.receivedOptionsMenu
+                ]}>
+                  {/* ...options... */}
+                </View>
+              )}
+            </View>
+          )
+        }}
         contentContainerStyle={styles.messageList}
       />
 
@@ -193,35 +151,6 @@ const CustomerChat = () => {
           <Icon name="send" size={24} color="white" />
         </TouchableOpacity>
       </View>
-
-      <Modal visible={editModalVisible} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
-            <Text style={styles.modalTitle}>Edit Message</Text>
-            <TextInput
-              style={styles.modalInput}
-              value={editedMessageText}
-              onChangeText={setEditedMessageText}
-              multiline
-            />
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.cancelButton]}
-                onPress={() => setEditModalVisible(false)}
-              >
-                <Text style={styles.buttonText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.saveButton]}
-                onPress={editMessage}
-                disabled={!editedMessageText.trim()}
-              >
-                <Text style={styles.buttonText}>Save</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </View>
   )
 }

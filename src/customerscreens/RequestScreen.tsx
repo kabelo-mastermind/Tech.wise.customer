@@ -19,6 +19,7 @@ import axios from "axios"
 import { api } from "../../api"
 import { LinearGradient } from "expo-linear-gradient"
 import { setUser } from "../redux/actions/authActions" // Import the action to update user in Redux
+import LoadingState from "../components/LoadingState"
 
 const SCREEN_HEIGHT = Dimensions.get("window").height
 const FETCH_INTERVAL = 30000 // Fetch customer code every 30 seconds
@@ -230,6 +231,14 @@ export default function RequestScreen({ navigation }) {
     setShowDistanceAlert(false)
   }
 
+if(isLoading) {
+  return (
+    <View style={styles.contentContainer}>
+      <LoadingState  />
+    </View>
+  )
+}  
+
   return (
     <View style={{ flex: 1, backgroundColor: "white" }}>
       <SafeAreaView style={styles.container}>
@@ -299,6 +308,7 @@ export default function RequestScreen({ navigation }) {
                 enablePoweredByContainer={false}
                 fetchDetails={true}
                 onPress={(data, details = null) => {
+                  console.log('Destination selected:', data, details)
                   if (details) {
                     // Check if user has a customer code before setting destination
                     if (!customerCode) {
@@ -330,6 +340,8 @@ export default function RequestScreen({ navigation }) {
                     })
                   }
                 }}
+                onFail={error => console.log('Destination autocomplete error:', error)}
+                onNotFound={() => console.log('Destination place not found')}
                 query={{
                   key: GOOGLE_MAPS_APIKEY,
                   language: "en",

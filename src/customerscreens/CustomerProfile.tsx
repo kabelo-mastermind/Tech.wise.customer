@@ -22,6 +22,7 @@ import { useSelector } from "react-redux"
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage"
 import { storage } from "../../firebase"
 import CustomDrawer from "../components/CustomDrawer"
+import LoadingState from "../components/LoadingState"
 
 // Memoized components to prevent unnecessary re-renders
 const ProfileHeader = memo(({ customerData, uploadingImage, pickImage, formData, isProfileComplete }) => (
@@ -74,16 +75,16 @@ const ProfileHeader = memo(({ customerData, uploadingImage, pickImage, formData,
             styles.progressBar,
             {
               width: `${isProfileComplete().complete
-                  ? 100
-                  : Math.max(
-                    25,
-                    Object.values({
-                      name: formData.name,
-                      lastName: formData.lastName,
-                      email: formData.email,
-                      phoneNumber: formData.phoneNumber,
-                    }).filter(Boolean).length * 25,
-                  )
+                ? 100
+                : Math.max(
+                  25,
+                  Object.values({
+                    name: formData.name,
+                    lastName: formData.lastName,
+                    email: formData.email,
+                    phoneNumber: formData.phoneNumber,
+                  }).filter(Boolean).length * 25,
+                )
                 }%`,
             },
           ]}
@@ -448,8 +449,7 @@ const CustomerProfile = ({ navigation }) => {
   if (loading) {
     return (
       <SafeAreaView style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#0DCAF0" />
-        <Text style={styles.loadingText}>Loading profile...</Text>
+        <LoadingState />
       </SafeAreaView>
     )
   }
@@ -735,7 +735,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#FFFFFF",
   },
-    roundButton: {
+  roundButton: {
     backgroundColor: "#fff",
     borderRadius: 30,
     width: 50,

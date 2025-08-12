@@ -1,7 +1,16 @@
 // redux/actions/tripActions.js
-export const setMessageData = (messageData) => {
-    return {
-      type: 'SET_MESSAGE_DATA',
-      payload: messageData,
-    };
+
+// Add a new message
+export const addMessage = (messageData) => {
+  return {
+    type: 'ADD_MESSAGE',
+    payload: messageData,
   };
+};
+
+// Optional: clear messages (e.g. on trip end)
+export const clearMessages = () => {
+  return {
+    type: 'CLEAR_MESSAGES',
+  };
+};

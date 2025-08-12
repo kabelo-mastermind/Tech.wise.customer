@@ -1,8 +1,27 @@
-.git
-node_modules
-.expo
+# System and local environment files
 .DS_Store
-Music/
-My Music/
 .env
 *.log
+
+# Version control and caches
+.git
+.gitignore
+.expo
+.expo-shared
+npm-debug.log
+
+# Node and package files
+node_modules
+package-lock.json
+yarn.lock
+
+# IDE/project files
+.vscode
+.idea
+
+# Unrelated local folders
+Music/
+My Music/
+/android
+/ios
+
