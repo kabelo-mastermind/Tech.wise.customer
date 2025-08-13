@@ -532,16 +532,16 @@ const DestinationScreen = ({ navigation, route }) => {
               <Text style={styles.headerTitle}>Enjoy your ride</Text>
 
               {/* Right button OR placeholder */}
-              <View style={styles.iconWrapper}>
-                {tripStatus !== "started" ? (
-                  <TouchableOpacity
-                    style={styles.cancelButtonContainer}
-                    onPress={handleCancelTrip}
-                  >
-                    <Icon name="cancel" color="#0DCAF0" size={30} />
-                  </TouchableOpacity>
-                ) : null}
-              </View>
+             <View style={styles.iconWrapper}>
+  {!(tripStatus === "started" || route.params?.paymentStatus === "success") && (
+    <TouchableOpacity
+      style={styles.cancelButtonContainer}
+      onPress={handleCancelTrip}
+    >
+      <Icon name="cancel" color="#0DCAF0" size={30} />
+    </TouchableOpacity>
+  )}
+</View>
             </View>
           </View>
 
