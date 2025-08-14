@@ -175,9 +175,12 @@ const LoginScreen = ({ navigation }) => {
                   </TouchableOpacity>
                 </View>
 
-                <TouchableOpacity >
-                  {/* onPress={() => navigation.navigate('ForgotPasswordScreen')} */}
-                  <Text style={styles.forgotPassword}>Forgot Password?</Text>
+                {/* Forgot Password */}
+                <TouchableOpacity
+                  style={styles.forgotPasswordContainer}
+                  onPress={() => navigation.navigate('ForgotPasswordScreen')}
+                >
+                  <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
                 </TouchableOpacity>
               </View>
 
@@ -199,18 +202,18 @@ const LoginScreen = ({ navigation }) => {
               </View>
 
               <View style={styles.socialButtons}>
-                <TouchableOpacity style={styles.socialButton}>
+                <View style={[styles.socialButton, { opacity: 0.5 }]}>
                   <Image
                     source={require('../../assets/icons/google.png')}
                     style={styles.socialIcon}
                   />
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.socialButton}>
+                </View>
+                <View style={[styles.socialButton, { opacity: 0.5 }]}>
                   <Image
                     source={require('../../assets/icons/facebook.png')}
                     style={styles.socialIcon}
                   />
-                </TouchableOpacity>
+                </View>
               </View>
 
               <Text style={styles.footerText}>
@@ -270,6 +273,15 @@ const styles = StyleSheet.create({
   },
   passwordContainer: {
     position: 'relative',
+  },
+  forgotPasswordContainer: {
+    alignSelf: 'flex-end',
+    marginBottom: 24,
+  },
+  forgotPasswordText: {
+    fontSize: 14,
+    color: '#0DCAF0',
+    fontWeight: '500',
   },
   eyeIcon: {
     position: 'absolute',

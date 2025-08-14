@@ -47,6 +47,7 @@ import BookingEdit from "../NthomeAir/BookingEdit";
 import BookingDetails from "../NthomeAir/BookingDetails";
 import FlightWelcomeScreen from "../NthomeAir/FlightWelcomeScreen";
 import TermsScreen from "../customerscreens/TermsScreen";
+import ForgotPasswordScreen from "../WelcomeScreens/ForgotPasswordScreen";
 const Stack = createNativeStackNavigator();
 const Drawer = createDrawerNavigator();
 const Tab = createBottomTabNavigator();
@@ -299,7 +300,7 @@ export default function RootNavigator() {
         <Stack.Screen name="LoginScreen" component={LoginScreen} options={{ headerShown: false }} />
         <Stack.Screen name="LogoutPage" component={LogoutPage} options={{ headerShown: false }} />
         <Stack.Screen name="SignUp" component={SignUpScreen} options={{ headerShown: false }} />
-        {/* <Stack.Screen name="ForgotPasswordScreen" component={ForgotPasswordScreen} options={{ headerShown: false }}/> */}
+        <Stack.Screen name="ForgotPasswordScreen" component={ForgotPasswordScreen} options={{ headerShown: false }}/>
         <Stack.Screen name="ProtectedScreen" component={ProtectedScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Profile" component={CustomerProfile} options={{ headerShown: false }} />
         <Stack.Screen name="TripDetails" component={TripDetails} options={{ headerShown: false }} />
