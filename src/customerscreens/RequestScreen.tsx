@@ -231,13 +231,15 @@ export default function RequestScreen({ navigation }) {
     setShowDistanceAlert(false)
   }
 
-if(isLoading) {
-  return (
-    <View style={styles.contentContainer}>
-      <LoadingState  />
-    </View>
-  )
-}  
+
+
+  if (isLoading) {
+    return (
+      <View style={styles.contentContainer}>
+        <LoadingState />
+      </View>
+    )
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: "white" }}>
@@ -253,7 +255,7 @@ if(isLoading) {
               {/* Right: Profile picture */}
               <TouchableOpacity onPress={() => navigation.navigate("Profile")} style={styles.profileButton}>
                 <Image
-                  source={{ uri: user?.profile_picture || 'https://via.placeholder.com/50' }}
+                  source={user?.profile_picture ? { uri: user.profile_picture } : require('../../assets/placeholder.jpg')}
                   style={styles.profileImage}
                 />
               </TouchableOpacity>

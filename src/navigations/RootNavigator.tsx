@@ -102,9 +102,9 @@ function BottomTabNavigator() {
 // Drawer Navigator
 function DrawerNavigator() {
   return (
-    <Drawer.Navigator initialRouteName="Ride with us!" screenOptions={{ headerShown: false }}>
+    <Drawer.Navigator initialRouteName="RequestScreen" screenOptions={{ headerShown: false }}>
       <Drawer.Screen
-        name="Ride with us!"
+        name="RequestScreen"
         component={RequestScreen}
         options={{
           drawerIcon: ({ focused, size }) => (
@@ -153,7 +153,7 @@ function DrawerNavigator() {
           ),
         }}
       />
-            <Drawer.Screen
+      <Drawer.Screen
         name="RideRating"
         component={RideRatingScreen}
         options={{
@@ -180,7 +180,7 @@ function DrawerNavigator() {
           ),
         }}
       />
-      
+
       <Drawer.Screen
         name="Logout"
         component={LogoutPage}
@@ -203,46 +203,63 @@ function DrawerNavigator() {
   );
 }
 
+// Helper to get active route name (even in nested navigators)
+const getActiveRouteName = (state) => {
+  const route = state.routes[state.index];
+  if (route.state) {
+    return getActiveRouteName(route.state);
+  }
+  return route.name;
+};
+
 // Root Navigator
 export default function RootNavigator() {
   const [isLoading, setIsLoading] = useState(true);
   const [initialRoute, setInitialRoute] = useState(null); // Initially null to avoid flickering
 
   useEffect(() => {
-    const checkAuthStatus = async () => {
+    const loadInitialRoute = async () => {
       try {
+        // Check if a last screen is saved
+        const savedScreen = await AsyncStorage.getItem('lastScreen');
+        console.log('Initial route:', initialRoute)
+        if (savedScreen) {
+          setInitialRoute(savedScreen);
+          setIsLoading(false);
+          return;
+        }
+
+        // Your existing auth/onboarding checks
         const hasOnboarded = await AsyncStorage.getItem('hasOnboarded');
         const storedUserId = await AsyncStorage.getItem('userId');
         const emailVerified = await AsyncStorage.getItem('emailVerified');
 
         if (storedUserId && emailVerified === 'true') {
           setInitialRoute('DrawerNavigator');
-          return;
-        }
-
-        const user = auth.currentUser;
-
-        if (user) {
-          await user.reload();
-          if (user.emailVerified) {
-            await AsyncStorage.setItem('userId', user.uid);
-            await AsyncStorage.setItem('emailVerified', 'true');
-            setInitialRoute('DrawerNavigator');
-          } else {
-            setInitialRoute('ProtectedScreen');
-          }
         } else {
-          setInitialRoute(hasOnboarded === 'true' ? 'LoginScreen' : 'Onboarding');
+          const user = auth.currentUser;
+          if (user) {
+            await user.reload();
+            if (user.emailVerified) {
+              await AsyncStorage.setItem('userId', user.uid);
+              await AsyncStorage.setItem('emailVerified', 'true');
+              setInitialRoute('DrawerNavigator');
+            } else {
+              setInitialRoute('ProtectedScreen');
+            }
+          } else {
+            setInitialRoute(hasOnboarded === 'true' ? 'LoginScreen' : 'Onboarding');
+          }
         }
       } catch (error) {
         console.error('Error checking authentication status:', error);
+        setInitialRoute('LoginScreen');
       } finally {
         setIsLoading(false);
       }
     };
 
-    checkAuthStatus();
-
+    loadInitialRoute();
 
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
@@ -268,7 +285,14 @@ export default function RootNavigator() {
   }
 
   return (
-    <NavigationContainer>
+    <NavigationContainer
+      onStateChange={(state) => {
+        const currentRouteName = getActiveRouteName(state);
+        if (currentRouteName) {
+          AsyncStorage.setItem('lastScreen', currentRouteName);
+        }
+      }}
+    >
       <Stack.Navigator initialRouteName={initialRoute}>
         <Stack.Screen name="DrawerNavigator" component={DrawerNavigator} options={{ headerShown: false }} />
         <Stack.Screen name="Onboarding" component={OnboardingScreen} options={{ headerShown: false }} />
@@ -302,7 +326,7 @@ export default function RootNavigator() {
         <Stack.Screen name="BookingEdit" component={BookingEdit} options={{ headerShown: false }} />
         <Stack.Screen name="FlightWelcomeScreen" component={FlightWelcomeScreen} options={{ headerShown: false }} />
         <Stack.Screen name="TermsScreen" component={TermsScreen} options={{ headerShown: false }} />
-        
+
 
 
 

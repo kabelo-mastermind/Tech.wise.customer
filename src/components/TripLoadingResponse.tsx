@@ -37,7 +37,7 @@ const TripLoadingResponse = ({ navigation, route }) => {
 
   // Countdown timer reference
   const countdownRef = useRef(null)
-
+ 
   const fetchTripStatuses = async () => {
     if (!user_id) return
 

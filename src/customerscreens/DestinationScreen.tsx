@@ -80,12 +80,12 @@ const DestinationScreen = ({ navigation, route }) => {
   const { originDriver = {} } = useContext(DriverOriginContext)
   const { origin = {} } = useContext(OriginContext)
   const { destination = {} } = useContext(DestinationContext)
-  console.log("DestinationScreen destination*************************:", destination);
+  console.log("DestinationScreen destination*************************:", tripData);
 
 
   const [userOrigin] = useState({
-    latitude: origin?.latitude || null,
-    longitude: origin?.longitude || null,
+    latitude: origin?.latitude || tripData?.pickUpCoordinates?.latitude || null,
+    longitude: origin?.longitude || tripData?.pickUpCoordinates?.longitude || null,
   })
 
   const [driverLocation, setDriverLocation] = useState({
@@ -193,6 +193,10 @@ const DestinationScreen = ({ navigation, route }) => {
       // alert(`Your trip has been accepted! Trip ID: ${data.tripId}`);
       setTripStatus("accepted")
       setTripData(data)
+      dispatch({
+        type: 'SET_TRIP_DATA',
+        payload: { status: 'accepted' }
+      });
     })
 
     // Listen for when the driver has arrived
@@ -211,12 +215,16 @@ const DestinationScreen = ({ navigation, route }) => {
 
       if (destination?.latitude && destination?.longitude) {
         setUserDestination({
-          latitude: destination.latitude,
-          longitude: destination.longitude,
+          latitude: destination.latitude || tripData?.dropOffCoordinates?.latitude || null,
+          longitude: destination.longitude || tripData?.dropOffCoordinates?.longitude || null,
         });
       } else {
         console.warn("Destination from context is not ready or incomplete");
       }
+      dispatch({
+        type: 'SET_TRIP_DATA',
+        payload: { status: 'on-going' }
+      });
     });
 
     // Listen for when the trip is ended
@@ -228,6 +236,10 @@ const DestinationScreen = ({ navigation, route }) => {
 
       // alert(`Your trip has ended! Trip ID: ${data.tripId}`);
       setTripStatus("ended");
+      dispatch({
+        type: 'SET_TRIP_DATA',
+        payload: { status: 'completed' }
+      });
       dispatch(clearMessages())
 
       // Navigate to RideRatingScreen
@@ -245,6 +257,10 @@ const DestinationScreen = ({ navigation, route }) => {
       console.log("❌ Trip declined:", data)
       // alert(`Your trip has been declined! Trip ID: ${data.tripId}`);
       setTripStatus("declined")
+      dispatch({
+        type: 'SET_TRIP_DATA',
+        payload: { status: 'canceled' }
+      });
     })
 
     listenToChatMessages((messageData) => {
@@ -269,6 +285,13 @@ const DestinationScreen = ({ navigation, route }) => {
 
   // Fetch trip statuses
   const [tripStatusAccepted, setTripStatusAccepted] = useState(null)
+  setTripStatusAccepted(tripData?.status) // Initialize with tripData status or default to "accepted"
+  if (tripData?.status === "on-going") {
+    setUserDestination({
+      latitude: tripData?.dropOffCoordinates?.latitude || null,
+      longitude: tripData?.dropOffCoordinates?.longitude || null,
+    });
+  }
   useEffect(() => {
     const fetchTripStatuses = async () => {
       if (!user_id) return
@@ -532,16 +555,16 @@ const DestinationScreen = ({ navigation, route }) => {
               <Text style={styles.headerTitle}>Enjoy your ride</Text>
 
               {/* Right button OR placeholder */}
-             <View style={styles.iconWrapper}>
-  {!(tripStatus === "started" || route.params?.paymentStatus === "success") && (
-    <TouchableOpacity
-      style={styles.cancelButtonContainer}
-      onPress={handleCancelTrip}
-    >
-      <Icon name="cancel" color="#0DCAF0" size={30} />
-    </TouchableOpacity>
-  )}
-</View>
+              <View style={styles.iconWrapper}>
+                {!(tripStatus === "started" || route.params?.paymentStatus === "success") && (
+                  <TouchableOpacity
+                    style={styles.cancelButtonContainer}
+                    onPress={handleCancelTrip}
+                  >
+                    <Icon name="cancel" color="#0DCAF0" size={30} />
+                  </TouchableOpacity>
+                )}
+              </View>
             </View>
           </View>
 
