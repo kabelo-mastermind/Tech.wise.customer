@@ -285,41 +285,48 @@ const DestinationScreen = ({ navigation, route }) => {
 
   // Fetch trip statuses
   const [tripStatusAccepted, setTripStatusAccepted] = useState(null)
-  setTripStatusAccepted(tripData?.status) // Initialize with tripData status or default to "accepted"
-  if (tripData?.status === "on-going") {
-    setUserDestination({
-      latitude: tripData?.dropOffCoordinates?.latitude || null,
-      longitude: tripData?.dropOffCoordinates?.longitude || null,
-    });
-  }
+  // Initialize state from tripData using useEffect
+  useEffect(() => {
+    if (tripData?.status) {
+      setTripStatusAccepted(tripData.status);
+
+      if (tripData.status === "on-going") {
+        setUserDestination({
+          latitude: tripData?.dropOffCoordinates?.latitude || null,
+          longitude: tripData?.dropOffCoordinates?.longitude || null,
+        });
+      }
+    }
+  }, [tripData?.status]); // Only runs when status changes
+
+  // Fetch trip statuses every 5 seconds
+  // Fetch trip statuses periodically
   useEffect(() => {
     const fetchTripStatuses = async () => {
-      if (!user_id) return
+      if (!user_id) return;
 
       try {
-        const response = await axios.get(`${api}trips/statuses/${user_id}`)
+        const response = await axios.get(`${api}trips/statuses/${user_id}`);
         if (response.status === 200) {
-          const latestTripStatus = response.data.latestTrip?.statuses
-          setTripStatusAccepted(latestTripStatus)
+          const latestTripStatus = response.data.latestTrip?.statuses;
+          // Only update if status changed
+          if (latestTripStatus !== tripStatusAccepted) {
+            setTripStatusAccepted(latestTripStatus);
+          }
 
-          // If the trip status is "canceled", set driverLocation to null
           if (latestTripStatus === "canceled") {
-            setDriverLocation({
-              latitude: null,
-              longitude: null,
-            })
+            setDriverLocation({ latitude: null, longitude: null });
           }
         }
       } catch (error) {
-        console.error("⚠️ Error fetching trip statuses:", error)
+        console.error("⚠️ Error fetching trip statuses:", error);
       }
-    }
+    };
 
-    fetchTripStatuses()
-    const intervalId = setInterval(fetchTripStatuses, 5000) // Fetch every 5 seconds
-
-    return () => clearInterval(intervalId) // Cleanup interval on unmount
-  }, [user_id, api])
+    fetchTripStatuses();
+    const intervalId = setInterval(fetchTripStatuses, 5000);
+    return () => clearInterval(intervalId);
+  }, [user_id, api, tripStatusAccepted]); // Added tripStatusAccepted to deps
 
   // hndle payment initiation and trip status changes
   useEffect(() => {
@@ -400,7 +407,7 @@ const DestinationScreen = ({ navigation, route }) => {
 
       checkAndInitiatePayment();
     }
-  }, [tripStatusAccepted]);
+  }, [tripStatusAccepted, paymentStatus, tripData]); // Proper dependencies
 
 
 
