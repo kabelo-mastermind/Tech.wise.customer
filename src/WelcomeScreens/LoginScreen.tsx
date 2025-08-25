@@ -9,6 +9,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { doc, getDoc } from 'firebase/firestore';
 import axios from 'axios';
 import { api } from '../../api';
+import { showToast } from '../constants/showToast';
 
 const LoginScreen = ({ navigation }) => {
   const [showPassword, setShowPassword] = useState(false);
@@ -38,64 +39,70 @@ const LoginScreen = ({ navigation }) => {
 
     return () => unsubscribe();
   }, [navigation, dispatch]);
-  const signIn = async () => {
-    setAuthenticating(true);
-    try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      const user = userCredential.user;
+const signIn = async () => {
+  setAuthenticating(true);
+  try {
+    const userCredential = await signInWithEmailAndPassword(auth, email, password);
+    const user = userCredential.user;
 
-      // Ensure email verification status is up-to-date
-      await user.reload();
+    // Ensure email verification status is up-to-date
+    await user.reload();
 
-      if (!user.emailVerified) {
-        alert('Please verify your email before logging in.');
-        navigation.navigate('ProtectedScreen');
-        return;
-      }
+    if (!user.emailVerified) {
+      showToast("info", "Verify your email ", "Please check your inbox before logging in.");
+      navigation.navigate("ProtectedScreen");
+      return;
+    }
 
-      // Retrieve user data from Firestore
-      const userRef = doc(db, 'users', user.uid);
-      const userDoc = await getDoc(userRef);
+    // Retrieve user data from Firestore
+    const userRef = doc(db, "users", user.uid);
+    const userDoc = await getDoc(userRef);
 
-      if (!userDoc.exists()) {
-        alert('User not found.');
-        return;
-      }
+    if (!userDoc.exists()) {
+      showToast("error", "Account not found", "Please contact support.");
+      return;
+    }
 
-      const userData = userDoc.data();
-      console.log("User data from Firestore:", userData);
+    const userData = userDoc.data();
+    console.log("User data from Firestore:", userData);
 
-      // Check if the user is a registered customer
-      if (userData.role !== 'user') {
-        alert('Only customers are allowed to log in.');
-        navigation.replace('LogoutPage');
-        return;
-      }
+    // Check if the user is a registered customer
+    if (userData.role !== "user") {
+      showToast("error", "Access denied ", "Only customers are allowed to log in.");
+      navigation.replace("LogoutPage");
+      return;
+    }
 
-      // Store user details in AsyncStorage
-      await AsyncStorage.setItem('userId', user.uid);
-      await AsyncStorage.setItem('emailVerified', 'true');
+    // Store user details in AsyncStorage
+    await AsyncStorage.setItem("userId", user.uid);
+    await AsyncStorage.setItem("emailVerified", "true");
 
-      setUserId(user.uid);
-      setUserAuth(user);
+    setUserId(user.uid);
+    setUserAuth(user);
 
-      // Dispatch user details to Redux
-      dispatch(setUser({
+    // Dispatch user details to Redux
+    dispatch(
+      setUser({
         name: user.displayName,
         email: user.email,
         id: user.uid,
         role: userData.role,
-      }));
+      })
+    );
 
-      // Call fetchCustomerUserID and pass user and userData
-      fetchCustomerUserID(user, userData);  // Pass both user and userData here
-    } catch (error) {
-      console.log(error);
-      alert('Sign in failed, please check your email and password');
-    } finally {
-      setAuthenticating(false);
-    }
-  };
+    // Call fetchCustomerUserID and pass user and userData
+    fetchCustomerUserID(user, userData);
+
+    // 🎉 Success toast
+    showToast("success", "Welcome back ", "You’ve successfully logged in!");
+  } catch (error) {
+    console.log(error);
+    showToast("error", "Login failed", "Please check your email and password.");
+  } finally {
+    setAuthenticating(false);
+  }
+};
+
 
   const fetchCustomerUserID = async (user, userData) => {
     try {

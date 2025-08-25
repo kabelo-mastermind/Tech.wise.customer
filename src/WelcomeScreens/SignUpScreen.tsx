@@ -6,6 +6,7 @@ import { createUserWithEmailAndPassword, updateProfile, sendEmailVerification, s
 import { doc, setDoc } from 'firebase/firestore'; // Firestore functions
 import axios from 'axios'; // Axios for sending backend request
 import { api } from '../../api'; // Your backend API
+import { showToast } from '../constants/showToast';
 
 export default function CreateAccount({ navigation }) {
   const [showPassword, setShowPassword] = useState(false);
@@ -16,57 +17,82 @@ export default function CreateAccount({ navigation }) {
   const [isChecked, setIsChecked] = useState(false);
   // const [gender, setGender] = useState('');
 
-  const signUp = async () => {
-    if (!email || !password || !name) {
-      alert('Please fill in all fields');
+const signUp = async () => {
+  if (!email || !password || !name) {
+    showToast(
+      "error",
+      "Missing Information",
+      "Please fill in your name, email and password to continue."
+    );
+    return;
+  }
+
+  setLoading(true);
+  try {
+    // Step 1: Check if email exists
+    const checkResponse = await axios.post(api + 'check-email', { email });
+
+    if (checkResponse.data.exists) {
+      showToast(
+        "error",
+        "Email Already Registered",
+        "This email is already linked to an account. Please try signing in or use a different email."
+      );
+      setLoading(false);
       return;
     }
 
-    setLoading(true);
-    try {
-      // Step 1: Check if email exists
-      const checkResponse = await axios.post(api + 'check-email', { email });
+    // Step 2: Create user with email and password
+    const response = await createUserWithEmailAndPassword(auth, email, password);
 
-      if (checkResponse.data.exists) {
-        alert('Email already exists. Please use a different email.');
-        setLoading(false);
-        return;
-      }
+    await updateProfile(response.user, { displayName: name });
 
-      // Step 2: Create user with email and password
-      const response = await createUserWithEmailAndPassword(auth, email, password);
+    const userRef = doc(db, 'users', response.user.uid);
+    await setDoc(userRef, {
+      name,
+      email,
+      role: 'user',
+      createdAt: new Date().toISOString(),
+    });
 
-      await updateProfile(response.user, { displayName: name });
+    await axios.post(api + 'register', {
+      name,
+      email,
+      role: 'customer',
+      user_uid: response.user.uid,
+    });
 
-      const userRef = doc(db, 'users', response.user.uid);
-      await setDoc(userRef, {
-        name,
-        email,
-        role: 'user',
-        createdAt: new Date().toISOString(),
-      });
+    await sendEmailVerification(response.user);
 
-      await axios.post(api + 'register', {
-        name,
-        email,
-        role: 'customer',
-        user_uid: response.user.uid,
-      });
+    showToast(
+      "success",
+      "Account Created Successfully",
+      "We’ve sent a verification link to your email. Please verify your account before logging in."
+    );
 
-      await sendEmailVerification(response.user);
+    await signOut(auth);
 
-      alert('Account created successfully! Please check your email for verification before logging in.');
+    navigation.replace('ProtectedScreen');
+  } catch (error: any) {
+    // console.error('Sign up failed:', error.message);?
 
-      await signOut(auth);
+    // Map errors to friendly messages
+    let friendlyMessage = "Something went wrong while creating your account. Please try again.";
 
-      navigation.replace('ProtectedScreen');
-    } catch (error) {
-      console.error('Sign up failed:', error.message);
-      alert('Sign up failed: ' + error.message);
-    } finally {
-      setLoading(false);
+    if (error.code === "auth/weak-password") {
+      friendlyMessage = "Your password is too weak. Please use at least 6 characters.";
+    } else if (error.code === "auth/invalid-email") {
+      friendlyMessage = "The email you entered is not valid. Please check and try again.";
+    } else if (error.code === "auth/email-already-in-use") {
+      friendlyMessage = "This email is already linked to another account.";
     }
-  };
+
+    showToast("error", "Sign Up Failed", friendlyMessage);
+  } finally {
+    setLoading(false);
+  }
+};
+
 
 
   return (

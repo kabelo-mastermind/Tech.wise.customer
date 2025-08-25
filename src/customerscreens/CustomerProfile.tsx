@@ -23,6 +23,7 @@ import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage"
 import { storage } from "../../firebase"
 import CustomDrawer from "../components/CustomDrawer"
 import LoadingState from "../components/LoadingState"
+import { showToast } from "../constants/showToast"
 
 // Memoized components to prevent unnecessary re-renders
 const ProfileHeader = memo(({ customerData, uploadingImage, pickImage, formData, isProfileComplete }) => (
@@ -177,18 +178,19 @@ const CustomerProfile = ({ navigation }) => {
   })
 
   // Fetch user data from db
+  // Fetch user data from db
   useEffect(() => {
-    if (!user_id) return
+    if (!user_id) return;
 
     const fetchCustomer = async () => {
-      setLoading(true)
+      setLoading(true);
       try {
-        const res = await axios.get(api + `customer/${user_id}`)
-        setCustomerData(res.data)
+        const res = await axios.get(api + `customer/${user_id}`);
+        setCustomerData(res.data);
 
         // Check if customer code exists
         if (res.data.customer_code) {
-          setCustomerCode(res.data.customer_code)
+          setCustomerCode(res.data.customer_code);
         }
 
         // Initialize form data with fetched data
@@ -200,44 +202,50 @@ const CustomerProfile = ({ navigation }) => {
           address: res.data.address || "",
           current_address: res.data.current_address || "",
           gender: res.data.gender || "",
-        })
+        });
       } catch (err) {
-        console.error("Error fetching customer:", err)
-        setError("Failed to fetch customer details.")
+        // console.error("Error fetching customer:", err);
+        showToast("error", "Fetch failed", "Failed to fetch customer details.");
       } finally {
-        setLoading(false)
+        setLoading(false);
       }
-    }
+    };
 
-    fetchCustomer()
-  }, [user_id])
+    fetchCustomer();
+  }, [user_id]);
 
   // Fetch total trip history
   useEffect(() => {
-    if (!user_id) return
+    if (!user_id) return;
 
     const fetchTrips = async () => {
       try {
         const res = await axios.get(api + `tripHistory/${user_id}`, {
           params: { status: "completed" },
-        })
-        setTotalCompletedTrips(res.data.length)
+        });
+        setTotalCompletedTrips(res.data.length);
       } catch (err) {
-        console.error("Error fetching trips:", err)
+        console.error("Error fetching trips:", err);
+        showToast(
+          "error",
+          "Fetch Failed",
+          "We couldn't load your trip history. Please try again later."
+        );
       }
-    }
+    };
 
-    fetchTrips()
-  }, [user_id])
+    fetchTrips();
+  }, [user_id]);
+
 
   // Handle image picking
   const pickImage = useCallback(async () => {
     try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync()
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
 
       if (status !== "granted") {
-        Alert.alert("Permission Denied", "We need camera roll permissions to change your profile picture.")
-        return
+        showToast("info", "Permission Denied", "Camera roll access is required to change your profile picture.");
+        return;
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -245,72 +253,72 @@ const CustomerProfile = ({ navigation }) => {
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.7,
-      })
+      });
 
       if (!result.canceled) {
-        uploadProfileImage(result.assets[0].uri)
+        uploadProfileImage(result.assets[0].uri);
       }
     } catch (error) {
-      console.error("Error picking image:", error)
-      Alert.alert("Error", "Failed to pick image. Please try again.")
+      // console.error("Error picking image:", error);
+      showToast("error", "Image Error", "Failed to pick image. Please try again.");
     }
-  }, [user_id, username])
+  }, [user_id, username]);
 
   // Upload profile image
   const uploadProfileImage = useCallback(
     async (imageUri) => {
       try {
-        setUploadingImage(true)
+        setUploadingImage(true);
 
-        const filename = imageUri.split("/").pop()
-        const match = /\.(\w+)$/.exec(filename)
-        const ext = match ? match[1] : "jpg"
+        const filename = imageUri.split("/").pop();
+        const match = /\.(\w+)$/.exec(filename);
+        const ext = match ? match[1] : "jpg";
 
-        const folderPath = `profile_pictures/${username}_${user_id}`
-        const storageRef = ref(storage, `${folderPath}/${filename}`)
+        const folderPath = `profile_pictures/${username}_${user_id}`;
+        const storageRef = ref(storage, `${folderPath}/${filename}`);
 
-        const response = await fetch(imageUri)
-        const blob = await response.blob()
+        const response = await fetch(imageUri);
+        const blob = await response.blob();
 
-        const uploadTask = uploadBytesResumable(storageRef, blob)
+        const uploadTask = uploadBytesResumable(storageRef, blob);
 
         uploadTask.on(
           "state_changed",
           null,
           (error) => {
-            console.error("Upload error:", error)
-            Alert.alert("Error", "Failed to upload profile picture.")
-            setUploadingImage(false)
+            // console.error("Upload error:", error);
+            showToast("error", "Upload Failed", "Failed to upload profile picture.");
+            setUploadingImage(false);
           },
           async () => {
-            const downloadURL = await getDownloadURL(uploadTask.snapshot.ref)
+            const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
 
             const res = await axios.post(`${api}update-profile-picture`, {
               profile_picture: downloadURL,
               user_id,
-            })
+            });
 
             if (res.status === 200) {
               setCustomerData((prev) => ({
                 ...prev,
                 profile_picture: downloadURL,
-              }))
-              Alert.alert("Success", "Profile picture updated successfully!")
+              }));
+              showToast("success", "Profile Updated", "Profile picture updated successfully!");
             } else {
-              Alert.alert("Error", "Failed to update profile picture in database.")
+              showToast("error", "Update Failed", "Failed to update profile picture in database.");
             }
 
-            setUploadingImage(false)
+            setUploadingImage(false);
           },
-        )
+        );
       } catch (error) {
-        console.error("Upload error:", error)
-        Alert.alert("Error", "Something went wrong.")
-        setUploadingImage(false)
+        // console.error("Upload error:", error);
+        showToast("error", "Error", "Something went wrong while uploading the image.");
+        setUploadingImage(false);
       }
     },
     [user_id, username],
-  )
+  );
 
   // Toggle edit mode
   const toggleEditMode = useCallback(() => {
@@ -348,8 +356,8 @@ const CustomerProfile = ({ navigation }) => {
   // Function to handle customer creation in Paystack
   const handleCustomerCreation = useCallback(async () => {
     if (!formData.email || !formData.name || !formData.lastName || !formData.phoneNumber) {
-      Alert.alert("Error", "Please complete the form before creating the customer.")
-      return null
+      showToast("error", "Incomplete Form", "Please complete the form before creating the customer.");
+      return null;
     }
 
     const payload = {
@@ -358,27 +366,29 @@ const CustomerProfile = ({ navigation }) => {
       last_name: formData.lastName,
       phone: formData.phoneNumber,
       user_id: user_id,
-    }
+    };
 
     try {
-      const response = await axios.post(api + "create-customer", payload)
+      const response = await axios.post(api + "create-customer", payload);
 
       if (response.status === 200) {
-        const customerData = response.data.data
-        return customerData?.customer_code
+        const customerData = response.data.data;
+        showToast("success", "Customer Created", "Payment profile created successfully!");
+        return customerData?.customer_code;
       } else {
-        console.error("Error creating customer:", response.data)
-        return null
+        // console.error("Error creating customer:", response.data);
+        showToast("error", "Creation Failed", "Failed to create customer.");
+        return null;
       }
     } catch (error) {
-      console.error("Error creating customer:", error.response?.data || error)
-      return null
+      // console.error("Error creating customer:", error.response?.data || error);
+      showToast("error", "Error", "Something went wrong while creating the customer.");
+      return null;
     }
-  }, [formData, user_id])
+  }, [formData, user_id]);
 
-  // Save all profile changes and create customer if profile is complete
+  // Save all profile changes
   const saveAllChanges = useCallback(async () => {
-    // Validate personal and address information
     const requiredFields = {
       "First Name": formData.name,
       "Last Name": formData.lastName,
@@ -386,57 +396,55 @@ const CustomerProfile = ({ navigation }) => {
       "Phone Number": formData.phoneNumber,
       Address: formData.address,
       "Current Address": formData.current_address,
-    }
+    };
 
     const missingFields = Object.entries(requiredFields)
       .filter(([_, value]) => !value || value.trim() === "")
-      .map(([key]) => key)
+      .map(([key]) => key);
 
     if (missingFields.length > 0) {
-      Alert.alert(
+      showToast(
+        "info",
         "Incomplete Information",
-        `Please fill the following fields before saving:\n\n${missingFields.join("\n")}`,
-      )
-      return
+        `Please fill the following fields:\n${missingFields.join(", ")}`
+      );
+      return;
     }
 
-    setIsSaving(true)
+    setIsSaving(true);
     try {
-      // Step 1: Create the customer and get the customer_code
-      const newCustomerCode = await handleCustomerCreation()
+      const newCustomerCode = await handleCustomerCreation();
 
       if (!newCustomerCode) {
-        Alert.alert("Error", "Failed to create payment profile. Please try again.")
-        setIsSaving(false)
-        return
+        showToast("error", "Profile Update Failed", "Failed to create payment profile. Please try again.");
+        setIsSaving(false);
+        return;
       }
 
-      // Step 2: Update the customer profile
       const response = await axios.put(api + "update-customer", {
         ...formData,
         user_id,
         customer_code: newCustomerCode,
-      })
+      });
 
       if (response.status === 200) {
         setCustomerData((prev) => ({
           ...prev,
           ...formData,
           customer_code: newCustomerCode,
-        }))
-
-        Alert.alert("Success", "Profile updated successfully!")
-        setEditMode(false)
+        }));
+        showToast("success", "Profile Updated", "Profile updated successfully!");
+        setEditMode(false);
       } else {
-        Alert.alert("Error", "Failed to update profile.")
+        showToast("error", "Update Failed", "Failed to update profile.");
       }
     } catch (error) {
-      console.error("Error updating profile:", error)
-      Alert.alert("Error", "Failed to update profile. Please try again.")
+      // console.error("Error updating profile:", error);
+      showToast("error", "Update Failed", "Failed to update profile. Please try again.");
     } finally {
-      setIsSaving(false)
+      setIsSaving(false);
     }
-  }, [formData, user_id, handleCustomerCreation])
+  }, [formData, user_id, handleCustomerCreation]);
 
   // Handle form input changes
   const handleInputChange = useCallback((field, value) => {

@@ -5,22 +5,27 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import RootNavigator from './src/navigations/RootNavigator';
 import { DestinationContextProvider, OriginContextProvider } from './src/contexts/contexts';
 import { DriverDestinationContextProvider, DriverOriginContextProvider } from './src/contexts/driverContexts';
-import { Provider } from 'react-redux'; // Import Redux provider
-import { PersistGate } from 'redux-persist/integration/react'; // Import PersistGate
-import { store, persistor } from './src/redux/store'; // Import the store and persistor
+import { Provider } from 'react-redux';
+import { PersistGate } from 'redux-persist/integration/react';
+import { store, persistor } from './src/redux/store';
 import { LogBox } from "react-native";
 import 'react-native-gesture-handler';
 import 'react-native-reanimated';
+import NetworkBanner from './src/components/NetworkBanner';
+import Toast from "react-native-toast-message";
+import { toastConfig } from "./src/components/CustomToast"; // ✅ if you created custom config
 
 LogBox.ignoreLogs([
-  "Text strings must be rendered within a <Text> component", // Ignores this specific warning
+  "Text strings must be rendered within a <Text> component",
 ]);
-// console.error = console.warn = (message) => alert(message); // Show errors as alerts
+
 export default function App() {
   return (
-    <Provider store={store}> {/* Wrap the app with Redux provider */}
-      <PersistGate loading={null} persistor={persistor}> {/* Wrap the app with PersistGate to wait for state rehydration */}
+    <Provider store={store}>
+      <PersistGate loading={null} persistor={persistor}>
         <GestureHandlerRootView style={styles.container}>
+          {/* Network Banner */}
+          <NetworkBanner />
           {/* Driver contexts */}
           <DriverOriginContextProvider>
             <DriverDestinationContextProvider>
@@ -28,6 +33,9 @@ export default function App() {
               <DestinationContextProvider>
                 <OriginContextProvider>
                   <RootNavigator />
+                  {/* ✅ Add Toast here */}
+                  <Toast config={toastConfig} /> 
+                  {/* if you don’t want custom config, just use <Toast /> */}
                 </OriginContextProvider>
               </DestinationContextProvider>
             </DriverDestinationContextProvider>

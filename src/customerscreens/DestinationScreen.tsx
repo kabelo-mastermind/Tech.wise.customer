@@ -414,7 +414,7 @@ const DestinationScreen = ({ navigation, route }) => {
 
   // Fetch driver location from firestore according to trip status
   useEffect(() => {
-    if (tripStatusAccepted === "accepted" && driver_id) {
+    if ((tripStatusAccepted === "accepted" || tripStatusAccepted === "on-going") && driver_id) {
       const driverDocRef = doc(db, "driver_locations", String(driver_id))
       const unsubscribe = onSnapshot(
         driverDocRef,

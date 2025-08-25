@@ -11,12 +11,13 @@ import * as FileSystem from 'expo-file-system';
 // Firebase imports
 import { storage } from '../../firebase'; // Firebase Storage Import - Keeping your original path
 import { ref, getDownloadURL, uploadBytes } from 'firebase/storage'; // Added deleteObject
+import { showToast } from "../constants/showToast"
 
 
 
 export default function TripDetails({ navigation, route }) {
   const { tripId } = route.params
-  console.log("Trip ID from params:", tripId)
+  // console.log("Trip ID from params:", tripId)
 
   // Create mapRef for the MapComponent
   const mapRef = useRef(null)
@@ -28,7 +29,7 @@ export default function TripDetails({ navigation, route }) {
   const [payment, setPayment] = useState(null)
   const [loadingData, setLoadingData] = useState(true)
   const [generatingReceipt, setGeneratingReceipt] = useState(false)
-  console.log("user driver:", userDriver);
+  // console.log("user driver:", userDriver);
 
   // Function to upload receipt to Firebase Storage
   const uploadReceiptToStorage = async (uri, fileName, userId) => {
@@ -41,12 +42,19 @@ export default function TripDetails({ navigation, route }) {
       await uploadBytes(storageRef, blob);      // ✅ Upload the blob
       const downloadURL = await getDownloadURL(storageRef);
 
+      showToast("success", "Upload complete", "Your receipt has been uploaded successfully!");
       return downloadURL;
     } catch (error) {
-      console.error("❌ Error uploading to Firebase:", error);
+      // console.error("❌ Error uploading to Firebase:", error);
+      showToast(
+        "error",
+        "Upload failed",
+        "We couldn't upload your receipt. Please try again."
+      );
       throw error;
     }
   };
+
 
 
   // Format date to readable format
@@ -282,13 +290,18 @@ export default function TripDetails({ navigation, route }) {
       const userId = userDriver?.id;
 
       if (!userId || !userDriver?.email) {
-        console.log("❌ Missing userId or customer email.");
+        // console.log("❌ Missing userId or customer email.");
+        showToast(
+          "error",
+          "Receipt Error",
+          "Cannot generate receipt because user information is incomplete."
+        );
         return;
       }
 
       // Upload to Firebase Storage
       const downloadURL = await uploadReceiptToStorage(uri, fileName, userId);
-      console.log("✅ Uploaded to Firebase:", downloadURL);
+      // console.log("✅ Uploaded to Firebase:", downloadURL);
 
       // Send to backend for email dispatch
       await axios.post(`${api}send-receipt`, {
@@ -297,98 +310,119 @@ export default function TripDetails({ navigation, route }) {
         tripId,
         receiptUrl: downloadURL,
       });
-      console.log("✅ Receipt email request sent to backend.");
-      alert("Receipt generated and sent to your email successfully!");
+      // console.log("✅ Receipt email request sent to backend.");
+
+      // Success toast
+      showToast(
+        "success",
+        "Receipt Sent 🎉",
+        "Receipt generated and sent to your email successfully!"
+      );
 
     } catch (error) {
-      console.error("❌ Error generating receipt:", error);
+      // console.error("❌ Error generating receipt:", error);
+      showToast(
+        "error",
+        "Receipt Failed",
+        "Failed to generate or send the receipt. Please try again."
+      );
     } finally {
       setGeneratingReceipt(false);
     }
+
   };
 
   // Fetch trip and related data when component mounts
   // This will fetch trip details, driver details, customer details, and payment details
   useEffect(() => {
     const fetchTripAndRelatedData = async () => {
-      setLoadingData(true)
+      setLoadingData(true);
       try {
         // 1. Fetch trip details using tripId
-        const tripRes = await axios.get(`${api}trip/${tripId}`)
-        const fetchedTrip = tripRes.data
-        setTrip(fetchedTrip)
-        console.log("Fetched Trip Data:", fetchedTrip)
+        const tripRes = await axios.get(`${api}trip/${tripId}`);
+        const fetchedTrip = tripRes.data;
+        setTrip(fetchedTrip);
+        // console.log("Fetched Trip Data:", fetchedTrip);
 
         // 2. Fetch payment details using tripId
-        const paymentRes = await fetchPaymentById(tripId)
-        setPayment(paymentRes)
-        console.log("Fetched Payment Data:", paymentRes)
+        const paymentRes = await fetchPaymentById(tripId);
+        setPayment(paymentRes);
+        // console.log("Fetched Payment Data:", paymentRes);
 
-        // 3. Fetch driver details using driverId from the fetched trip
+        // 3. Fetch driver details
         if (fetchedTrip?.driverId) {
-          const driverData = await fetchUserById(fetchedTrip.driverId)
-          setUserDriver(driverData)
-          console.log("Fetched Driver Data:", driverData)
+          const driverData = await fetchUserById(fetchedTrip.driverId);
+          setUserDriver(driverData);
+          // console.log("Fetched Driver Data:", driverData);
+          if (!driverData) {
+            showToast("error", "Driver Not Found", "Failed to fetch driver details.");
+          }
         }
-        // 4. Fetch customer details using customerId from the fetched trip
+
+        // 4. Fetch customer details
         if (fetchedTrip?.customerId) {
           const customerData = await fetchCustomerByQueryId(fetchedTrip.customerId);
-          setUserCustomer(customerData); // assuming you define this state
-          console.log("Fetched Customer Data (via query):", customerData);
+          setUserCustomer(customerData);
+          // console.log("Fetched Customer Data:", customerData);
+          if (!customerData) {
+            showToast("error", "Customer Not Found", "Failed to fetch customer details.");
+          }
         }
 
+        if (!fetchedTrip) {
+          showToast("error", "Trip Not Found", "Failed to fetch trip details.");
+        }
       } catch (err) {
-        console.log("Error fetching trip or related data:", err)
+        // console.error("Error fetching trip or related data:", err);
+        showToast(
+          "error",
+          "Data Fetch Error",
+          "Something went wrong while fetching trip details. Please try again."
+        );
       } finally {
-        setLoadingData(false)
+        setLoadingData(false);
       }
-    }
+    };
 
-    fetchTripAndRelatedData()
-  }, [tripId])
+    fetchTripAndRelatedData();
+  }, [tripId]);
 
-  // Function to fetch driver user data from backend
+  // Function to fetch driver user data
   async function fetchUserById(userId) {
     try {
-      const response = await fetch(api + `customer/${userId}`)
-      if (!response.ok) {
-        throw new Error(`Error fetching driver: ${response.status}`)
-      }
-      const driverData = await response.json()
-      return driverData
+      const response = await fetch(api + `customer/${userId}`);
+      if (!response.ok) throw new Error(`Error fetching driver: ${response.status}`);
+      return await response.json();
     } catch (error) {
-      console.log("Fetch driver error:", error)
-      return null
+      // console.error("Fetch driver error:", error);
+      showToast("error", "Driver Fetch Error", "Failed to fetch driver data.");
+      return null;
     }
   }
-
   // Function to fetch customer using query parameter (?id=...)
   async function fetchCustomerByQueryId(customerId) {
     try {
       const response = await fetch(`${api}customer?id=${customerId}`);
-      if (!response.ok) {
-        throw new Error(`Error fetching customer by query: ${response.status}`);
-      }
-      const customerData = await response.json();
-      return customerData;
+      if (!response.ok) throw new Error(`Error fetching customer by query: ${response.status}`);
+      return await response.json();
     } catch (error) {
-      console.log("Fetch customer by query error:", error);
+      // console.error("Fetch customer by query error:", error);
+      showToast("error", "Customer Fetch Error", "Failed to fetch customer data.");
       return null;
     }
   }
 
-  // Function to fetch payment data from backend
+
+  // Function to fetch payment data
   async function fetchPaymentById(tripId) {
     try {
-      const response = await fetch(api + `payment/${tripId}`)
-      if (!response.ok) {
-        throw new Error(`Error fetching payment: ${response.status}`)
-      }
-      const paymentData = await response.json()
-      return paymentData
+      const response = await fetch(api + `payment/${tripId}`);
+      if (!response.ok) throw new Error(`Error fetching payment: ${response.status}`);
+      return await response.json();
     } catch (error) {
-      console.log("Fetch payment error:", error)
-      return null
+      // console.error("Fetch payment error:", error);
+      showToast("error", "Payment Fetch Error", "Failed to fetch payment details.");
+      return null;
     }
   }
 

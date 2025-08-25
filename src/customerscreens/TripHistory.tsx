@@ -19,6 +19,7 @@ import { useSelector } from "react-redux"
 import axios from "axios"
 import { api } from "../../api"
 import { LinearGradient } from "expo-linear-gradient"
+import { showToast } from "../constants/showToast"
 
 const { width } = Dimensions.get("window")
 
@@ -84,10 +85,18 @@ export default function MyRidesScreen({ navigation }) {
       setHasError(false)
     } catch (err) {
       setHasError(true)
+      // console.error("Error fetching trips:", err)
+      // Show friendly toast
+      showToast(
+        "error",
+        "Failed to load rides",
+        "We couldn't fetch your trips. Please check your connection and try again."
+      )
     } finally {
       setIsLoading(false)
     }
   }
+
 
   useEffect(() => {
     if (customerId) {
