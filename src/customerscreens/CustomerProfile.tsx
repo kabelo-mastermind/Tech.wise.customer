@@ -455,11 +455,7 @@ const CustomerProfile = ({ navigation }) => {
   }, [])
 
   if (loading) {
-    return (
-      <SafeAreaView style={styles.loadingContainer}>
-        <LoadingState />
-      </SafeAreaView>
-    )
+    return <LoadingState />
   }
 
   if (error) {
@@ -694,12 +690,12 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#F8FAFC",
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#F8FAFC",
-  },
+  // loadingContainer: {
+  //   flex: 1,
+  //   justifyContent: "center",
+  //   alignItems: "center",
+  //   backgroundColor: "#F8FAFC",
+  // },
   loadingText: {
     marginTop: 16,
     fontSize: 16,

@@ -234,11 +234,7 @@ export default function RequestScreen({ navigation }) {
 
 
   if (isLoading) {
-    return (
-      <View style={styles.contentContainer}>
-        <LoadingState />
-      </View>
-    )
+    return <LoadingState />
   }
 
   return (
@@ -467,10 +463,10 @@ const styles = StyleSheet.create({
     elevation: 5,
     zIndex: 1,
   },
-  contentContainer: {
-    flex: 1,
-    alignItems: "center",
-  },
+  // contentContainer: {
+  //   flex: 1,
+  //   alignItems: "center",
+  // },
   backButton: {
     padding: 10,
   },
