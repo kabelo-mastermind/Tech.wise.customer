@@ -174,7 +174,7 @@ const DestinationScreen = ({ navigation, route }) => {
       }
     } catch (error) {
       console.error("Error fetching customer code:", error)
-      alert("There was an error processing your payment. Please try again.")
+      alert("There was an error processing your payment. Please try again or complete your profile.")
       return null
     }
   }
@@ -328,6 +328,73 @@ const DestinationScreen = ({ navigation, route }) => {
     return () => clearInterval(intervalId);
   }, [user_id, api, tripStatusAccepted]); // Added tripStatusAccepted to deps
 
+
+  // initiate payment function
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+
+  const checkAndInitiatePayment = async () => {
+    if (isProcessingPayment) return;
+    setIsProcessingPayment(true);
+
+    try {
+      const code = await fetchCustomerCode();
+      if (!code || tripAmount <= 0) {
+        Alert.alert("Error", "Invalid payment code or amount.");
+        setIsProcessingPayment(false);
+        return;
+      }
+
+      console.log(`Initiating payment: ${tripAmount} ZAR`);
+
+      const response = await fetch(api + "initialize-payment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: userEmail,
+          amount: tripAmount,
+          user_id: user_id,
+          driverId: driver_id,
+        }),
+      });
+
+      const data = await response.json();
+      console.log("Backend init response:", data);
+
+      if (data.charged) {
+        Alert.alert("Payment Success", "Your saved card was charged successfully.");
+        setPaymentStatus("success");
+        setTripMeta({
+          tripId: tripData?.tripId,
+          driverName: tripData?.driverName || "Your Driver",
+          tripDistance: distanceTrip,
+          tripDuration: etaTrip,
+        });
+      } else if (data.data?.authorization_url) {
+        console.log("Redirecting user to Paystack WebView...");
+        setAuthorizationUrl(data.data.authorization_url);
+        setTripMeta({
+          tripId: tripData?.tripId,
+          driverName: tripData?.driverName || "Your Driver",
+          tripDistance: distanceTrip,
+          tripDuration: etaTrip,
+        });
+        setPaymentStatus("pending"); // waiting for WebView completion
+      } else {
+        Alert.alert(
+          "Payment Failed",
+          "Could not initialize payment. Press retry after checking your card."
+        );
+        setPaymentStatus("failed");
+      }
+    } catch (err) {
+      console.error("Payment init error:", err.message);
+      Alert.alert("Error", "Something went wrong while processing payment.");
+      setPaymentStatus("failed");
+    } finally {
+      setIsProcessingPayment(false); // always reset
+    }
+  };
+
   // hndle payment initiation and trip status changes
   useEffect(() => {
     if (tripStatusAccepted === "canceled") {
@@ -351,60 +418,6 @@ const DestinationScreen = ({ navigation, route }) => {
       tripData?.paymentType === "Credit Card"
     ) {
       console.log("Trip is ongoing, checking payment status...");
-
-      const checkAndInitiatePayment = async () => {
-        const code = await fetchCustomerCode();
-        if (code && tripAmount > 0) {
-          console.log(`Initiating payment: ${tripAmount} ZAR`);
-
-          try {
-            const response = await fetch(api + "initialize-payment", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                email: userEmail,
-                amount: tripAmount,
-                user_id: user_id,
-                driverId: driver_id,
-              }),
-            });
-
-            const data = await response.json();
-            console.log("Backend init response:", data);
-
-            if (data.charged) {
-              // ✅ Payment was automatically charged!
-              Alert.alert("Payment Success", "Your saved card was charged successfully.");
-              setPaymentStatus("success"); // Update your payment status
-              setTripMeta({
-                tripId: tripData?.tripId,
-                driverName: tripData?.driverName || "Your Driver",
-                tripDistance: distanceTrip,
-                tripDuration: etaTrip,
-              });
-              // Optionally navigate or update UI here
-            } else if (data.data?.authorization_url) {
-              // ✅ New payment → need to open WebView
-              console.log("Redirecting user to Paystack WebView...");
-              setTripMeta({
-                tripId: tripData?.tripId,
-                driverName: tripData?.driverName || "Your Driver",
-                tripDistance: distanceTrip,
-                tripDuration: etaTrip,
-              });
-              setAuthorizationUrl(data.data.authorization_url);
-            } else {
-              Alert.alert("Error", "Failed to initialize or charge payment.");
-            }
-          } catch (err) {
-            console.error("Payment init error:", err.message);
-            Alert.alert("Error", "Something went wrong while processing payment.");
-          }
-        }
-      };
-
       checkAndInitiatePayment();
     }
   }, [tripStatusAccepted, paymentStatus, tripData]); // Proper dependencies
@@ -608,6 +621,18 @@ const DestinationScreen = ({ navigation, route }) => {
         message="Trip was cancelled."
         onClose={() => setShowCancelAlert(false)}
       />
+      {paymentStatus === "failed" && (
+        <TouchableOpacity
+          style={styles.retryButton}
+          onPress={checkAndInitiatePayment}
+          disabled={isProcessingPayment}
+        >
+          <Text style={styles.retryButtonText}>
+            {isProcessingPayment ? "Processing..." : "Retry Payment"}
+          </Text>
+        </TouchableOpacity>
+      )}
+
     </SafeAreaView >
   )
 }
@@ -728,6 +753,19 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 16,
     fontWeight: "600",
+  },
+    retryButton: {
+    backgroundColor: "#FF6B6B",
+    paddingVertical: 12,
+    paddingHorizontal: 25,
+    borderRadius: 8,
+    alignItems: "center",
+    marginTop: 20,
+  },
+  retryButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "bold",
   },
 })
 

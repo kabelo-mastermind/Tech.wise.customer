@@ -37,6 +37,8 @@ const DriverDetailsBottomSheet = ({ navigation, route }) => {
   const insets = useSafeAreaInsets()
 
   const carData = route.params || {}
+  console.log("Car Data in DriverDetailsBottomSheet:", carData.carData);
+  
 
   const { id, driverName, price, ETA, driverPhoto, classType, driverState, driverStatus } = carData
   const role = carData.carData.driverGender
@@ -60,6 +62,14 @@ const DriverDetailsBottomSheet = ({ navigation, route }) => {
   }
 
   const bottomSheetHeight = getBottomSheetHeight()
+
+const classMap = {
+  "1": "Nthome Black",
+  "2": "Nthome X",
+};
+
+const displayClass = classMap[classType] || classType;
+
 
   useEffect(() => {
     const focusListener = navigation.addListener("focus", () => {
@@ -200,35 +210,42 @@ const DriverDetailsBottomSheet = ({ navigation, route }) => {
   const driver_id = extractedData.driverId || ""
 
   // Fetch driver rating from the server
-  useEffect(() => {
-    const fetchDriverRating = async () => {
-      try {
-        const res = await axios.get(`${api}/allTrips`, {
-          params: {
-            driverId: driver_id, // pass the driver's ID here
-          },
-        })
+useEffect(() => {
+  const fetchDriverRating = async () => {
+    try {
+      const res = await axios.get(`${api}/allTrips`, {
+        params: { driverId: driver_id },
+      });
 
-        const trips = res.data
+      const trips = res.data?.data; // <-- access the array inside 'data'
 
-        // Filter out null ratings
-        const ratedTrips = trips.filter(trip => trip.driver_ratings !== null)
-
-        if (ratedTrips.length > 0) {
-          const total = ratedTrips.reduce((sum, trip) => sum + parseFloat(trip.driver_ratings), 0)
-          const avg = total / ratedTrips.length
-          setDriverRating(avg)
-        } else {
-          setDriverRating(null)
-        }
-
-      } catch (err) {
-        console.error("Error fetching driver rating:", err)
+      if (!Array.isArray(trips)) {
+        console.error("Expected trips to be an array, got:", trips);
+        setDriverRating(null);
+        return;
       }
-    }
 
-    fetchDriverRating()
-  }, [driver_id])
+      // Filter out null ratings
+      const ratedTrips = trips.filter(trip => trip.driver_ratings !== null);
+
+
+      if (ratedTrips.length > 0) {
+        const total = ratedTrips.reduce((sum, trip) => sum + parseFloat(trip.driver_ratings), 0);
+        const avg = total / ratedTrips.length;
+        setDriverRating(avg);
+      } else {
+        setDriverRating(null);
+      }
+
+    } catch (err) {
+      console.error("Error fetching driver rating:", err);
+      setDriverRating(null);
+    }
+  };
+
+  fetchDriverRating();
+}, [driver_id]);
+
 
   // Function to render stars based on rating
   const renderStars = (rating) => {
@@ -249,7 +266,7 @@ const DriverDetailsBottomSheet = ({ navigation, route }) => {
     return (
       <View style={styles.starsContainer}>
         {stars}
-        <Text style={styles.ratingText}>{isNaN(driverRating) ? "N/A" : Number(driverRating).toFixed(1)}</Text>
+        <Text style={styles.ratingText}>{isNaN(carData.carData?.driverRating) ? "N/A" : Number(carData.carData?.driverRating).toFixed(1)}</Text>
       </View>
     )
   }
@@ -305,11 +322,11 @@ const DriverDetailsBottomSheet = ({ navigation, route }) => {
                 <View style={styles.driverDetails}>
                   <Text style={styles.driverName}>{driverName}</Text>
 
-                  {renderStars(driverRating)}
+                  {renderStars(carData.carData?.driverRating)}
 
                   <View style={styles.vehicleInfo}>
                     <Icon name="car" type="material-community" size={16} color="#0DCAF0" />
-                    <Text style={styles.vehicleText}>{classType || "Standard"}</Text>
+                    <Text style={styles.vehicleText}>{displayClass || "Standard"}</Text>
                   </View>
                 </View>
               </View>
@@ -602,6 +619,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#64748B",
     marginTop: 2,
+    
   },
   buttonContainer: {
     paddingHorizontal: 20,

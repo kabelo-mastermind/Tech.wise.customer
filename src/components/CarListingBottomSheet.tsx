@@ -44,6 +44,7 @@ const CarListingBottomSheet = ({ navigation, route }) => {
         const fullCarData = response.data;
 
         setCarData(fullCarData);
+        
 
         console.log("Fetched Car Data:", fullCarData);
       } catch (error) {

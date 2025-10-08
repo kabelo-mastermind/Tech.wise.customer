@@ -45,18 +45,27 @@ const CustomDrawer = ({ isOpen, toggleDrawer, navigation }) => {
       try {
         const res = await axios.get(`${api}/tripHistory/${user_id}`, {
           params: {
-            customerId: user_id, // pass the customer's ID here
+            customerId: user_id,
           },
         })
+
         const trips = res.data
 
-        // Filter out null ratings
-        const ratedTrips = trips.filter((trip) => trip.customer_rating !== null)
+        // ✅ Filter out trips that are null or have 0.0 ratings
+        const ratedTrips = trips.filter(
+          (trip) =>
+            trip.customer_rating !== null &&
+            !isNaN(Number(trip.customer_rating)) &&
+            Number(trip.customer_rating) > 0
+        )
 
         if (ratedTrips.length > 0) {
-          const total = ratedTrips.reduce((sum, trip) => sum + Number.parseFloat(trip.customer_rating), 0)
+          const total = ratedTrips.reduce(
+            (sum, trip) => sum + Number(trip.customer_rating),
+            0
+          )
           const avg = total / ratedTrips.length
-          setRating(avg)
+          setRating(Number(avg.toFixed(1))) // ✅ show one decimal (e.g. 4.9)
         } else {
           setRating(null)
         }
