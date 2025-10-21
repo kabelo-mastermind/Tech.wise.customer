@@ -7,6 +7,8 @@ import axios from "axios"
 import { api } from "../../api" // Assuming this path is correct for your project
 import { SafeAreaView } from "react-native-safe-area-context"
 import { useFocusEffect } from "@react-navigation/native"
+import { showToast } from '../constants/showToast';
+
 
 const { width, height } = Dimensions.get("window")
 
@@ -148,7 +150,10 @@ const BookingDetails = ({ route, navigation }) => {
   }
 
   const handleCancelBooking = () => {
-    Alert.alert("Cancel Booking", "Are you sure you want to cancel this booking?", [
+  Alert.alert(
+    "Cancel Booking",
+    "Are you sure you want to cancel this booking?",
+    [
       { text: "No", style: "cancel" },
       {
         text: "Yes, Cancel",
@@ -158,7 +163,8 @@ const BookingDetails = ({ route, navigation }) => {
             id: booking.id,
             user_id: userId,
             status: "Cancelled",
-          })
+          });
+
           try {
             await axios.put(`${api}helicopter_quotes`, {
               data: {
@@ -166,17 +172,27 @@ const BookingDetails = ({ route, navigation }) => {
                 status: "Cancelled",
                 user_id: userId,
               },
-            })
-            Alert.alert("Success", "Booking cancelled successfully!")
-            navigation.navigate("BookingList", { userId })
+            });
+
+            // ✅ Show toast on success
+            showToast("success", "Success", "Booking cancelled successfully!");
+
+            navigation.navigate("BookingList", { userId });
           } catch (error) {
-            console.error("Error cancelling booking:", error.response?.data || error.message)
-            Alert.alert("Error", "Could not cancel booking. Please try again.")
+            // console.error(
+            //   "Error cancelling booking:",
+            //   error.response?.data || error.message
+            // );
+
+            // ❌ Show toast on error
+            showToast("error", "Error", "Could not cancel booking. Please try again.");
           }
         },
       },
-    ])
-  }
+    ]
+  );
+};
+
 
   const departureCode = getAirportCode(booking.departurePoint)
   const destinationCode = getAirportCode(booking.destination)

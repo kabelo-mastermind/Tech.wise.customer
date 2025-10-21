@@ -25,6 +25,7 @@ import { useSelector } from "react-redux"
 import { useFocusEffect } from "@react-navigation/native"
 import CustomDrawer from "../components/CustomDrawer"
 import { LinearGradient } from "expo-linear-gradient"
+import { showToast } from "../constants/showToast"
 
 const { width, height } = Dimensions.get("window")
 
@@ -109,17 +110,21 @@ const BookingList = ({ navigation, route }) => {
 
   const toggleDrawer = () => setDrawerOpen(!drawerOpen)
 
-  useFocusEffect(
-    useCallback(() => {
-      setLoading(true)
-      axios
-        .get(api + "helicopter_quotes/" + userIdGlobal)
-        .then((res) => setBookings(Array.isArray(res.data) ? res.data : []))
-        .catch(() => Alert.alert("Error", "Error loading bookings"))
-        .finally(() => setLoading(false)
-        )
-    }, [userIdGlobal]),
-  )
+useFocusEffect(
+  useCallback(() => {
+    setLoading(true);
+
+    axios
+      .get(api + "helicopter_quotes/" + userIdGlobal)
+      .then((res) => setBookings(Array.isArray(res.data) ? res.data : []))
+      .catch((error) => {
+        // console.error("Error loading bookings:", error.response?.data || error.message);
+        showToast("error", "Error", "Error loading bookings");
+      })
+      .finally(() => setLoading(false));
+  }, [userIdGlobal])
+);
+
 
   const now = new Date()
   const filteredBookings = useMemo(() => {

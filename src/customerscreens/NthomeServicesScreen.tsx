@@ -12,11 +12,14 @@ import {
   Animated,
   Platform,
   SafeAreaView,
+  Modal,
+  Linking,
 } from "react-native"
 import { LinearGradient } from "expo-linear-gradient"
 import { Ionicons } from "@expo/vector-icons"
 import CustomDrawer from "../components/CustomDrawer"
 import { Icon } from "react-native-elements"
+import ChatBot from "../components/ChatBot" // Import the ChatBot component
 
 const { width, height } = Dimensions.get("window")
 
@@ -95,6 +98,7 @@ const ServiceCard = ({ title, description, isComingSoon, onPress, index }) => {
 
 const NthomeServicesScreen = ({ navigation }) => {
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [chatBotVisible, setChatBotVisible] = useState(false) // Chatbot modal state
   const toggleDrawer = () => setDrawerOpen(!drawerOpen)
   const [scrollY] = useState(new Animated.Value(0))
 
@@ -104,11 +108,6 @@ const NthomeServicesScreen = ({ navigation }) => {
   }
 
   const handleAirPress = () => {
-    // Alert.alert(
-    //   "Coming Soon",
-    //   "NthomeAir service will be available soon!",
-    //   [{ text: "OK", onPress: () => console.log("OK Pressed") }]
-    // )
     navigation.navigate("FlightWelcomeScreen")
   }
 
@@ -123,6 +122,25 @@ const NthomeServicesScreen = ({ navigation }) => {
       { text: "OK", onPress: () => console.log("OK Pressed") },
     ])
   }
+
+  // Chatbot handlers
+  const openChatBot = () => {
+    setChatBotVisible(true)
+  }
+
+  const closeChatBot = () => {
+    setChatBotVisible(false)
+  }
+     const handleEmailSupport = () => {
+      const email = "nthomecouriers@gmail.com"; // Replace with your support email
+      const subject = "Support Request";
+      const body = "Hi, I need help with...";
+      const url = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  
+      Linking.openURL(url).catch((err) =>
+        console.error("Failed to open email client:", err)
+      );
+    };
 
   // Calculate header opacity based on scroll position
   const headerOpacity = scrollY.interpolate({
@@ -208,7 +226,7 @@ const NthomeServicesScreen = ({ navigation }) => {
               <Text style={styles.infoText}>
                 Our customer support team is available 24/7 to assist you with any questions.
               </Text>
-              <TouchableOpacity style={styles.infoButton}>
+              <TouchableOpacity style={styles.infoButton} onPress={handleEmailSupport}>
                 <Text style={styles.infoButtonText}>Contact Support</Text>
               </TouchableOpacity>
             </View>
@@ -216,8 +234,8 @@ const NthomeServicesScreen = ({ navigation }) => {
         </Animated.ScrollView>
       </View>
 
-      {/* Floating Action Button */}
-      <TouchableOpacity style={styles.fab} activeOpacity={0.9}>
+      {/* Floating Action Button for Chat */}
+      <TouchableOpacity style={styles.fab} activeOpacity={0.9} onPress={openChatBot}>
         <LinearGradient
           colors={["#0DCAF0", "#0AA8CC"]}
           style={styles.fabGradient}
@@ -227,6 +245,16 @@ const NthomeServicesScreen = ({ navigation }) => {
           <Ionicons name="chatbubble-ellipses" size={24} color="#fff" />
         </LinearGradient>
       </TouchableOpacity>
+
+      {/* ChatBot Modal */}
+      <Modal
+        visible={chatBotVisible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={closeChatBot}
+      >
+        <ChatBot onClose={closeChatBot} />
+      </Modal>
 
       {/* Custom Drawer - Wrapped in an overlay View */}
       {drawerOpen && (
@@ -430,8 +458,9 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    zIndex: 1000, // Ensure this is higher than any other zIndex
-    backgroundColor: "rgba(0,0,0,0.5)", // Optional: adds a semi-transparent background dimming
+    zIndex: 1000,
+    backgroundColor: "rgba(0,0,0,0.5)",
   },
 })
+
 export default NthomeServicesScreen

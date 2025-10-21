@@ -176,8 +176,19 @@ const CustomerProfile = ({ navigation }) => {
     current_address: "",
     gender: "",
   })
+// Add timeout to prevent infinite loading
+useEffect(() => {
+  const loadingTimer = setTimeout(() => {
+    if (loading) {
+      console.log('Loading timeout reached - forcing stop')
+      setLoading(false)
+      setError('Loading timeout - please check your connection')
+    }
+  }, 10000) // 10 second timeout
 
-  // Fetch user data from db
+  return () => clearTimeout(loadingTimer)
+}, [loading])
+
   // Fetch user data from db
   useEffect(() => {
     if (!user_id) return;

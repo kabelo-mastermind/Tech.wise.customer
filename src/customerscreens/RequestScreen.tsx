@@ -27,6 +27,8 @@ const MAX_DISTANCE_KM = 200 // Maximum allowed distance in kilometers
 
 export default function RequestScreen({ navigation }) {
   const user = useSelector((state) => state.auth.user)
+  console.log("from logged in user))))))))))))))", user);
+  
   const dispatch = useDispatch()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const toggleDrawer = () => setDrawerOpen(!drawerOpen)
@@ -45,7 +47,8 @@ export default function RequestScreen({ navigation }) {
   const [showDistanceAlert, setShowDistanceAlert] = useState(false)
   const [distanceInKm, setDistanceInKm] = useState(0)
   const [currentAddress, setCurrentAddress] = useState('');
-
+  const [isDragging, setIsDragging] = useState(false); // Track if marker is being dragged
+  const [showDirections, setShowDirections] = useState(false);
   // Function to calculate distance between two coordinates using Haversine formula
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
     const R = 6371 // Earth radius in kilometers
@@ -73,6 +76,109 @@ export default function RequestScreen({ navigation }) {
     setDistanceInKm(distance.toFixed(2))
     return distance <= MAX_DISTANCE_KM
   }
+  // Function to reverse geocode coordinates to address
+  const reverseGeocode = async (coordinate) => {
+    try {
+      const addressArray = await Location.reverseGeocodeAsync({
+        latitude: coordinate.latitude,
+        longitude: coordinate.longitude
+      })
+
+      if (addressArray.length > 0) {
+        const address = addressArray[0];
+        // Format address based on available components
+        const formattedAddress = [
+          address.name,
+          address.street,
+          address.city,
+          address.region,
+          address.country
+        ].filter(Boolean).join(', ');
+
+        return formattedAddress;
+      }
+      return "Unknown location";
+    } catch (error) {
+      console.error("Reverse geocoding error:", error);
+      return "Unknown location";
+    }
+  }
+
+  // Handle destination marker drag
+  const handleDestinationDrag = async (coordinate) => {
+    setIsDragging(true);
+
+    // Update the destination coordinates immediately for smooth dragging
+    const updatedDestination = {
+      ...destination,
+      latitude: coordinate.latitude,
+      longitude: coordinate.longitude,
+    };
+
+    dispatchDestination({
+      type: "ADD_DESTINATION",
+      payload: updatedDestination,
+    });
+
+    // Update the destination input field with "Updating..." while dragging
+    if (destinationRef.current) {
+      destinationRef.current.setAddressText("Updating location...");
+    }
+  };
+
+  // Handle destination marker drag end
+  const handleDestinationDragEnd = async (coordinate) => {
+    try {
+      // Get the address for the final dropped position
+      const address = await reverseGeocode(coordinate);
+
+      const finalDestination = {
+        latitude: coordinate.latitude,
+        longitude: coordinate.longitude,
+        address: address,
+        name: address.split(',')[0] || "Dropped location", // Use first part of address as name
+      };
+
+      // Update destination with final coordinates and address
+      dispatchDestination({
+        type: "ADD_DESTINATION",
+        payload: finalDestination,
+      });
+
+      // Update the destination input field with the actual address
+      if (destinationRef.current) {
+        destinationRef.current.setAddressText(address);
+      }
+
+      // Check distance limit after dropping
+      if (!checkDistanceLimit(origin, finalDestination)) {
+        setShowDistanceAlert(true);
+      }
+
+    } catch (error) {
+      console.error("Error during drag end:", error);
+
+      // Fallback: at least update coordinates even if geocoding fails
+      const fallbackDestination = {
+        ...destination,
+        latitude: coordinate.latitude,
+        longitude: coordinate.longitude,
+        address: `Location (${coordinate.latitude.toFixed(4)}, ${coordinate.longitude.toFixed(4)})`,
+      };
+
+      dispatchDestination({
+        type: "ADD_DESTINATION",
+        payload: fallbackDestination,
+      });
+
+      if (destinationRef.current) {
+        destinationRef.current.setAddressText(fallbackDestination.address);
+      }
+    } finally {
+      setIsDragging(false);
+    }
+  };
+
 
   // Function to fetch customer code from the database
   const fetchCustomerCode = async () => {
@@ -126,7 +232,7 @@ export default function RequestScreen({ navigation }) {
 
     try {
       const { status } = await Location.requestForegroundPermissionsAsync()
-      console.log("Permission Status:", status)
+      // console.log("Permission Status:", status)
       if (status !== "granted") {
         return
       }
@@ -193,25 +299,39 @@ export default function RequestScreen({ navigation }) {
     }
   }, []);
 
-  useEffect(() => {
-    if (destination?.latitude && destination?.longitude) {
-      // Check if user has a customer code before allowing navigation
-      if (!customerCode) {
-        setShowProfileAlert(true)
-        return
-      }
-
-      // Check if distance is within allowed limit
-      if (!checkDistanceLimit(origin, destination)) {
-        setShowDistanceAlert(true)
-        dispatchDestination({ type: "RESET_DESTINATION" })
-        setDestination(false)
-        return
-      }
-
-      navigation.navigate("CarListingBottomSheet")
+  // ✅ UseEffect with delay 2-5 delays before navigating
+useEffect(() => {
+  if (destination?.latitude && destination?.longitude) {
+    if (!customerCode) {
+      setShowProfileAlert(true);
+      return;
     }
-  }, [destination?.latitude, destination?.longitude])
+
+    if (!checkDistanceLimit(origin, destination)) {
+      setShowDistanceAlert(true);
+      dispatchDestination({ type: "RESET_DESTINATION" });
+      setDestination(false);
+      return;
+    }
+
+    // ⏳ Timer 1: Show directions after 2 seconds
+    const directionTimer = setTimeout(() => {
+      setShowDirections(true);
+    }, 2000);
+
+    // ⏳ Timer 2: Navigate after 5 seconds
+    const navigationTimer = setTimeout(() => {
+      navigation.navigate("CarListingBottomSheet");
+    }, 5000);
+
+    // 🧹 Cleanup timers when destination changes
+    return () => {
+      clearTimeout(directionTimer);
+      clearTimeout(navigationTimer);
+      setShowDirections(false);
+    };
+  }
+}, [destination?.latitude, destination?.longitude]);
 
   const clearOrigionAddress = () => {
     if (originRef.current) {
@@ -297,6 +417,8 @@ export default function RequestScreen({ navigation }) {
               <TouchableOpacity style={styles.locationButton} onPress={getCurrentLocation}>
                 <Icon name="my-location" size={20} color="#fff" />
               </TouchableOpacity>
+
+
               <GooglePlacesAutocomplete
                 ref={destinationRef}
                 placeholder="Where to"
@@ -306,7 +428,7 @@ export default function RequestScreen({ navigation }) {
                 enablePoweredByContainer={false}
                 fetchDetails={true}
                 onPress={(data, details = null) => {
-                  console.log('Destination selected:', data, details)
+                  // console.log('Destination selected:', data, details)
                   if (details) {
                     // Check if user has a customer code before setting destination
                     if (!customerCode) {
@@ -354,8 +476,13 @@ export default function RequestScreen({ navigation }) {
           </View>
         </View>
 
-        <MapComponent key={mapKey} userOrigin={origin} userDestination={destination} />
-
+        <MapComponent key={mapKey} userOrigin={origin} userDestination={destination} onDestinationDrag={handleDestinationDrag} onDestinationDragEnd={handleDestinationDragEnd} showDirections ={showDirections} />
+        {/* Show loading indicator while reverse geocoding during drag */}
+        {isDragging && (
+          <View style={styles.draggingIndicator}>
+            <Text style={styles.draggingText}>Updating location...</Text>
+          </View>
+        )}
         {/* Profile Completion Banner - only show if customer code is missing and we're not loading */}
         {!isLoading && !customerCode && (
           <TouchableOpacity style={styles.profileBanner} onPress={navigateToProfile}>
@@ -769,5 +896,19 @@ const autoCompleteStyles = {
   },
   inputStackContainer: {
     marginTop: 90,
+  },
+  draggingIndicator: {
+    position: 'absolute',
+    top: 150,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+  },
+  draggingText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '500',
   },
 }

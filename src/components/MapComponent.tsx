@@ -19,8 +19,16 @@ const OriginMarker = memo(({ coordinate }) => (
   </Marker>
 ))
 
-const DestinationMarker = memo(({ coordinate }) => (
-  <Marker coordinate={coordinate} anchor={{ x: 0.5, y: 1 }}>
+// Fixed DestinationMarker with all required props
+const DestinationMarker = memo(({ coordinate, onDragEnd, onDragStart, onDrag }) => (
+  <Marker
+    coordinate={coordinate}
+    anchor={{ x: 0.5, y: 1 }}
+    draggable
+    onDragStart={onDragStart || (() => { })} // Added fallback
+    onDrag={onDrag || (() => { })} // Added fallback
+    onDragEnd={onDragEnd || (() => { })} // Added fallback
+  >
     <View style={styles.markerContainer}>
       <Icon type="material-community" name="map-marker" size={36} color="#F44336" />
     </View>
@@ -36,65 +44,85 @@ const DriverMarker = memo(({ coordinate }) => (
   </Marker>
 ))
 
-const MapComponent = ({ userOrigin, userDestination, driverLocation }) => {
+const MapComponent = ({
+  userOrigin,
+  userDestination,
+  driverLocation,
+  onDestinationDrag,
+  onDestinationDragEnd,
+  onDestinationDragStart, // Added this prop
+  showDirections = true // Default to true
+}) => {
   const dispatch = useDispatch()
   const mapRef = useRef(null)
- 
+
+  // Debug logging to track props
+  useEffect(() => {
+    console.log('MapComponent Props:', {
+      userOrigin,
+      userDestination,
+      driverLocation,
+      showDirections
+    })
+  }, [userOrigin, userDestination, driverLocation, showDirections])
+
   // Optimize map centering with useCallback
-const centerMap = useCallback(() => {
-  if (!mapRef.current) return;
+  const centerMap = useCallback(() => {
+    if (!mapRef.current) return;
 
-  if (userDestination?.latitude && userDestination?.longitude) {
-    mapRef.current.animateToRegion({
-      latitude: userDestination.latitude,
-      longitude: userDestination.longitude,
-      latitudeDelta: 0.005,
-      longitudeDelta: 0.005,
-    });
-  } else if (driverLocation?.latitude && driverLocation?.longitude) {
-    mapRef.current.animateToRegion({
-      latitude: driverLocation.latitude,
-      longitude: driverLocation.longitude,
-      latitudeDelta: 0.005,
-      longitudeDelta: 0.005,
-    });
-  } else if (userOrigin?.latitude && userOrigin?.longitude) {
-    mapRef.current.animateToRegion({
-      latitude: userOrigin.latitude,
-      longitude: userOrigin.longitude,
-      latitudeDelta: 0.005,
-      longitudeDelta: 0.005,
-    });
-  }
-}, [userDestination, driverLocation, userOrigin]);
-
+    if (userDestination?.latitude && userDestination?.longitude) {
+      mapRef.current.animateToRegion({
+        latitude: userDestination.latitude,
+        longitude: userDestination.longitude,
+        latitudeDelta: 0.005,
+        longitudeDelta: 0.005,
+      });
+    } else if (driverLocation?.latitude && driverLocation?.longitude) {
+      mapRef.current.animateToRegion({
+        latitude: driverLocation.latitude,
+        longitude: driverLocation.longitude,
+        latitudeDelta: 0.005,
+        longitudeDelta: 0.005,
+      });
+    } else if (userOrigin?.latitude && userOrigin?.longitude) {
+      mapRef.current.animateToRegion({
+        latitude: userOrigin.latitude,
+        longitude: userOrigin.longitude,
+        latitudeDelta: 0.005,
+        longitudeDelta: 0.005,
+      });
+    }
+  }, [userDestination, driverLocation, userOrigin]);
 
   // Optimize fitting coordinates with useCallback
   const fitCoordinates = useCallback(() => {
     if (!mapRef.current) return
 
-    if (userOrigin?.latitude && userDestination?.latitude) {
-      const coordinates = [userOrigin, userDestination]
+    const coordinates = []
 
-      // Only add driver location if it exists
-      if (driverLocation?.latitude && driverLocation?.longitude) {
-        coordinates.push(driverLocation)
-      }
+    // Add all valid coordinates
+    if (userOrigin?.latitude && userOrigin?.longitude) {
+      coordinates.push(userOrigin)
+    }
 
-      // Filter out any invalid coordinates
-      const validCoordinates = coordinates.filter((coord) => coord?.latitude && coord?.longitude)
+    if (userDestination?.latitude && userDestination?.longitude) {
+      coordinates.push(userDestination)
+    }
 
-      if (validCoordinates.length > 0) {
-        mapRef.current.fitToCoordinates(validCoordinates, {
-          edgePadding: {
-            top: 100,
-            right: 50,
-            bottom: 100,
-            left: 50,
-          },
-          animated: true,
-        })
-      }
+    if (driverLocation?.latitude && driverLocation?.longitude) {
+      coordinates.push(driverLocation)
+    }
+
+    if (coordinates.length > 0) {
+      mapRef.current.fitToCoordinates(coordinates, {
+        edgePadding: {
+          top: 100,
+          right: 50,
+          bottom: 100,
+          left: 50,
+        },
+        animated: true,
+      })
     }
   }, [userOrigin, userDestination, driverLocation])
 
@@ -103,31 +131,32 @@ const centerMap = useCallback(() => {
     centerMap()
   }, [centerMap])
 
-  // Effect for fitting coordinates
+  // Effect for fitting coordinates when destinations change
   useEffect(() => {
-      if (userDestination?.latitude && userDestination?.longitude) {
-      fitCoordinates();
+    if (userOrigin || userDestination || driverLocation) {
+      fitCoordinates()
     }
-  }, [userDestination,fitCoordinates])
+  }, [userOrigin, userDestination, driverLocation, fitCoordinates])
 
   const initialRegion =
     userOrigin?.latitude && userOrigin?.longitude
       ? {
-          latitude: userOrigin.latitude,
-          longitude: userOrigin.longitude,
-          latitudeDelta: 0.005,
-          longitudeDelta: 0.005,
-        }
+        latitude: userOrigin.latitude,
+        longitude: userOrigin.longitude,
+        latitudeDelta: 0.005,
+        longitudeDelta: 0.005,
+      }
       : {
-          latitude: -25.5399,
-          longitude: 28.1,
-          latitudeDelta: 0.005,
-          longitudeDelta: 0.005,
-        }
+        latitude: -25.5399,
+        longitude: 28.1,
+        latitudeDelta: 0.005,
+        longitudeDelta: 0.005,
+      }
 
   // Optimize directions ready callback
   const onDirectionsReady = useCallback(
     (result) => {
+      console.log('Directions ready:', result)
       dispatch(setDistance(result.distance))
       dispatch(setDuration(result.duration))
     },
@@ -136,8 +165,30 @@ const centerMap = useCallback(() => {
 
   // Optimize directions error callback
   const onDirectionsError = useCallback((errorMessage) => {
-    console.log(errorMessage)
+    console.log('Directions error:', errorMessage)
   }, [])
+
+  // Handle marker drag events with better error handling
+  const handleMarkerDragStart = useCallback((e) => {
+    console.log('Drag start:', e.nativeEvent.coordinate)
+    if (onDestinationDragStart) {
+      onDestinationDragStart(e.nativeEvent.coordinate)
+    }
+  }, [onDestinationDragStart])
+
+  const handleMarkerDrag = useCallback((e) => {
+    console.log('Dragging:', e.nativeEvent.coordinate)
+    if (onDestinationDrag) {
+      onDestinationDrag(e.nativeEvent.coordinate)
+    }
+  }, [onDestinationDrag])
+
+  const handleMarkerDragEnd = useCallback((e) => {
+    console.log('Drag end:', e.nativeEvent.coordinate)
+    if (onDestinationDragEnd) {
+      onDestinationDragEnd(e.nativeEvent.coordinate)
+    }
+  }, [onDestinationDragEnd])
 
   return (
     <View style={styles.container}>
@@ -148,14 +199,30 @@ const centerMap = useCallback(() => {
         ref={mapRef}
         initialRegion={initialRegion}
         maxZoomLevel={18}
+        showsUserLocation={false} // Added to prevent conflicts
       >
-        {userOrigin?.latitude && userOrigin?.longitude && <OriginMarker coordinate={userOrigin} />}
+        {/* Render origin marker */}
+        {userOrigin?.latitude && userOrigin?.longitude && (
+          <OriginMarker coordinate={userOrigin} />
+        )}
 
-        {userDestination?.latitude && userDestination?.longitude && <DestinationMarker coordinate={userDestination} />}
+        {/* Render destination marker */}
+        {userDestination?.latitude && userDestination?.longitude && (
+          <DestinationMarker
+            coordinate={userDestination}
+            onDragStart={handleMarkerDragStart}
+            onDrag={handleMarkerDrag}
+            onDragEnd={handleMarkerDragEnd}
+          />
+        )}
 
-        {driverLocation?.latitude && driverLocation?.longitude && <DriverMarker coordinate={driverLocation} />}
+        {/* Render driver marker */}
+        {driverLocation?.latitude && driverLocation?.longitude && (
+          <DriverMarker coordinate={driverLocation} />
+        )}
 
-        {userOrigin?.latitude && userDestination?.latitude && (
+        {/* Render directions - fixed condition */}
+        {showDirections && userOrigin?.latitude && userOrigin?.longitude && userDestination?.latitude && userDestination?.longitude && (
           <MapViewDirections
             origin={userOrigin}
             destination={userDestination}
@@ -167,6 +234,7 @@ const centerMap = useCallback(() => {
             precision="high"
             timePrecision="now"
             optimizeWaypoints={true}
+            mode="DRIVING" // Explicitly set mode
           />
         )}
       </MapView>
@@ -202,6 +270,8 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 3,
     elevation: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   carImage: {
     width: 30,

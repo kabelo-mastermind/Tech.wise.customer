@@ -19,7 +19,7 @@ const TripLoadingResponse = ({ navigation, route }) => {
   const [durationReached, setDurationReached] = useState(false)
   const [modalVisible, setModalVisible] = useState(true)
   const user_id = useSelector((state) => state.auth?.user.user_id)
-  const [timeoutSeconds] = useState(25)
+  const [timeoutSeconds] = useState(40)
   const [secondsLeft, setSecondsLeft] = useState(timeoutSeconds)
   const { tripId } = route.params || {}
   // Animation refs

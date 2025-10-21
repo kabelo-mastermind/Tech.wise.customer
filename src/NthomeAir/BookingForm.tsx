@@ -21,6 +21,7 @@ import { useSelector } from "react-redux"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { GooglePlacesAutocomplete } from "react-native-google-places-autocomplete"
 import { GOOGLE_MAPS_APIKEY } from "@env"
+import { showToast } from "../constants/showToast"
 
 const colors = {
   primary: "#00B8D9", // Professional blue
@@ -576,47 +577,55 @@ const BookingForm = ({ navigation }) => {
     }
   }, [])
 
-  const handleSubmit = React.useCallback(async () => {
-    const requiredFields = ["flightDate", "numberOfPassengers", "departurePoint", "destination", "aircraftType"]
-    const missingFields = requiredFields.filter((field) => !form[field])
+const handleSubmit = React.useCallback(async () => {
+  const requiredFields = [
+    "flightDate",
+    "numberOfPassengers",
+    "departurePoint",
+    "destination",
+    "aircraftType",
+  ];
+  const missingFields = requiredFields.filter((field) => !form[field]);
 
-    if (missingFields.length > 0) {
-      Alert.alert("Missing Information", "Please fill in all required fields.")
-      return
+  if (missingFields.length > 0) {
+    showToast("error", "Missing Information", "Please fill in all required fields.");
+    return;
+  }
+
+  try {
+    await axios.post(api + "helicopter_quotes", { user_id: userId, ...form });
+
+Alert.alert( "Quote Request Submitted", "Thank you! We will reply within 24 hours with your personalized quote. Please be at the airport 2 hours before your scheduled departure time.", )
+
+    // Reset form
+    setForm({
+      flightDate: "",
+      numberOfPassengers: "",
+      passengerWeights: "",
+      luggageWeight: "",
+      departurePoint: "",
+      destination: "",
+      aircraftType: "",
+      needsTransport: false,
+      requiresLounge: false, // Reset lounge service
+      isReturnFlight: "",
+      waitingTime: "",
+    });
+
+    // Clear autocomplete inputs
+    if (departureRef.current) {
+      departureRef.current.setAddressText("");
+    }
+    if (destinationRef.current) {
+      destinationRef.current.setAddressText("");
     }
 
-    try {
-      await axios.post(api + "helicopter_quotes", { user_id: userId, ...form })
-      Alert.alert(
-        "Quote Request Submitted",
-        "Thank you! We will reply within 24 hours with your personalized quote. Please be at the airport 2 hours before your scheduled departure time.",
-      )
-      // Reset form
-      setForm({
-        flightDate: "",
-        numberOfPassengers: "",
-        passengerWeights: "",
-        luggageWeight: "",
-        departurePoint: "",
-        destination: "",
-        aircraftType: "",
-        needsTransport: false,
-        requiresLounge: false, // Reset lounge service
-        isReturnFlight: "",
-        waitingTime: "",
-      })
-      // Clear autocomplete inputs
-      if (departureRef.current) {
-        departureRef.current.setAddressText("")
-      }
-      if (destinationRef.current) {
-        destinationRef.current.setAddressText("")
-      }
-      navigation.navigate("BookingList", { userId })
-    } catch (error) {
-      Alert.alert("Error", "Failed to submit quote. Please try again.")
-    }
-  }, [form, userId, navigation])
+    navigation.navigate("BookingList", { userId });
+  } catch (error) {
+    // console.error("Error submitting quote:", error.response?.data || error.message);
+    showToast("error", "Error", "Failed to submit quote. Please try again.");
+  }
+}, [form, userId, navigation]);
 
   const getInputStyle = React.useCallback(
     (inputName) => [styles.input, focused === inputName && styles.inputFocused, form[inputName] && styles.inputFilled],

@@ -67,6 +67,7 @@ const PaymentSuccess = () => {
         if (res.data.status === "success") {
           setStatus("success");
           const data = res.data.data;
+          console.log("Payment verification status data^^^^^^^&&&&&&^^^^^^^^^^:", data);
           const auth = data.authorization;
           const customer = data.customer;
   

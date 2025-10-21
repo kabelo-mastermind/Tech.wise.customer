@@ -19,6 +19,7 @@ import DateTimePicker from "@react-native-community/datetimepicker"
 import { Ionicons, MaterialCommunityIcons, FontAwesome5, FontAwesome } from "@expo/vector-icons"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { useFocusEffect } from "@react-navigation/native"
+import { showToast } from "../constants/showToast"
 
 const colors = {
   brandCyan: "#00B8D9",
@@ -103,27 +104,41 @@ const BookingEdit = ({ route, navigation }) => {
     }
   }
 
-  const handleUpdate = async () => {
-    if (!canEdit) {
-      Alert.alert("Editing Not Allowed", "You can only edit your booking within 2 hours of creation.")
-      return
-    }
-
-    const requiredFields = ["flightDate", "numberOfPassengers", "departurePoint", "destination"]
-    const missingFields = requiredFields.filter((field) => !form[field])
-    if (missingFields.length > 0) {
-      Alert.alert("Missing Information", "Please fill in all required fields.")
-      return
-    }
-
-    try {
-      await axios.put(api + `helicopter_quotes/${booking.id}`, { ...form, user_id: userId })
-      Alert.alert("Success", "Booking updated!")
-      navigation.navigate("BookingDetail", { booking: { ...booking, ...form }, userId }) // Pass updated booking data
-    } catch {
-      Alert.alert("Error", "Could not update booking.")
-    }
+const handleUpdate = async () => {
+  if (!canEdit) {
+    showToast(
+      "info",
+      "Editing Not Allowed",
+      "You can only edit your booking within 2 hours of creation."
+    );
+    return;
   }
+
+  const requiredFields = ["flightDate", "numberOfPassengers", "departurePoint", "destination"];
+  const missingFields = requiredFields.filter((field) => !form[field]);
+  if (missingFields.length > 0) {
+    showToast("error", "Missing Information", "Please fill in all required fields.");
+    return;
+  }
+
+  try {
+    await axios.put(api + `helicopter_quotes/${booking.id}`, {
+      ...form,
+      user_id: userId,
+    });
+
+    showToast("success", "Success", "Booking updated!");
+
+    navigation.navigate("BookingDetail", {
+      booking: { ...booking, ...form },
+      userId,
+    }); // Pass updated booking data
+  } catch (error) {
+    // console.error("Error updating booking:", error.response?.data || error.message);
+    showToast("error", "Error", "Could not update booking.");
+  }
+};
+
 
   const getInputStyle = (inputName) => [
     styles.input,

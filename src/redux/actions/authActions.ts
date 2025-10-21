@@ -1,13 +1,16 @@
-export const SET_USER = 'SET_USER';
-
-interface SetUserAction {
-  type: typeof SET_USER;
-  payload: Record<string, any> | null;
+// Define your User type (expand as needed)
+export interface User {
+  id?: string;
+  name?: string;
+  email?: string;
+  [key: string]: any;
 }
 
-export type AuthAction = SetUserAction;
+// Action Types
+export const SET_USER = 'SET_USER';
 
-export const setUser = (user: Record<string, any> | null): SetUserAction => ({
-  type: SET_USER,
+// Action creator
+export const setUser = (user: User) => ({
+  type: SET_USER as typeof SET_USER,
   payload: user,
 });

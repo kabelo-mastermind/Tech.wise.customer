@@ -19,8 +19,6 @@ import MapView, { PROVIDER_GOOGLE, Marker } from "react-native-maps"
 import { LinearGradient } from 'expo-linear-gradient';
 import CustomDrawer from "../components/CustomDrawer"
 import { useSelector } from "react-redux"
-import axios from "axios"
-import { api } from "../../api"
 
 // Get screen dimensions for responsive design
 const { width, height } = Dimensions.get("window") // Added height for header sizing
@@ -70,14 +68,12 @@ const popularDestinations = [
   { id: "5", city: "Victoria Falls", image: require("../../assets/nthomeAir_images/Victoria.jpg") }, // cross-border
 ]
 
-// const recentSearches = [
-//   { id: "1", term: "Cape Town, South Africa" },
-//   { id: "2", term: "Durban, South Africa" },
-//   { id: "3", term: "Johannesburg, South Africa" },
-//   { id: "4", term: "Victoria Falls, Zimbabwe" },
-// ]
-
-
+const recentSearches = [
+  { id: "1", term: "Cape Town, South Africa" },
+  { id: "2", term: "Durban, South Africa" },
+  { id: "3", term: "Johannesburg, South Africa" },
+  { id: "4", term: "Victoria Falls, Zimbabwe" },
+]
 
 const exclusiveOffers = [
   {
@@ -111,7 +107,6 @@ const HomeScreen = ({ navigation }) => {
   const [weather, setWeather] = useState(null)
   const [loadingWeather, setLoadingWeather] = useState(true)
   const [weatherError, setWeatherError] = useState(false)
-  const user_id = useSelector((state) => state.auth?.user.user_id)
 
   // State for Drawer Navigation
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -168,40 +163,7 @@ const HomeScreen = ({ navigation }) => {
     }, 2500)
     return () => clearTimeout(timer)
   }, [])
-  
-  // Fetch recent drop-off locations from trip history
-const [recentSearches, setRecentSearches] = useState([]);
 
-useEffect(() => {
-  const fetchRecentDropOffs = async () => {
-    try {
-      const response = await axios.get(`${api}/tripHistory/${user_id}`);
-      const trips = response.data;
-
-      if (Array.isArray(trips) && trips.length > 0) {
-        // Sort by created_at (or tripId if you prefer) to get the latest ones
-        const sortedTrips = [...trips].sort(
-          (a, b) => new Date(b.created_at) - new Date(a.created_at)
-        );
-
-        // Extract only dropOffLocation (ensure column name matches your DB)
-        const latestDropOffs = sortedTrips
-          .filter(trip => trip.dropOffLocation) // skip null/empty
-          .slice(0, 4) // get the last 4
-          .map((trip, index) => ({
-            id: trip.id?.toString() || index.toString(),
-            term: trip.dropOffLocation,
-          }));
-
-        setRecentSearches(latestDropOffs);
-      }
-    } catch (error) {
-      console.error("Error fetching recent drop-offs:", error);
-    }
-  };
-
-  fetchRecentDropOffs();
-}, [user_id]);
   return (
     <View style={styles.fullScreenContainer}>
       {/* New Header Section */}

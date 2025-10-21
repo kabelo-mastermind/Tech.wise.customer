@@ -27,6 +27,7 @@ const DriverInfoBlurView = ({ route, navigation }) => {
       const driver = {
         name: tripData.carData.carData.driverName,
         location: tripData.tripData.dropOffCoordinates.address,
+        pickUpLocation: tripData.tripData.pickUpCoordinates.address,
         rating: tripData.carData.carData.driver_ratings || "No ratings yet",
         gender: tripData.carData.carData.driverGender,
         profileImage: tripData.carData.carData.driverPhoto,
@@ -167,10 +168,22 @@ const DriverInfoBlurView = ({ route, navigation }) => {
 
               <View style={styles.divider} />
 
+              {/* Pickup Location */}
+              <View style={styles.locationContainer}>
+                <View style={styles.locationHeader}>
+                  <Icon name="map-marker-outline" type="material-community" size={20} color="#10B981" />
+                  <Text style={styles.locationTitle}>Pickup Location</Text>
+                </View>
+                <Text style={styles.locationText}>{driverDetails?.pickUpLocation || "N/A"}</Text>
+              </View>
+
+              <View style={styles.locationDivider} />
+
+              {/* DropOff Location */}
               <View style={styles.locationContainer}>
                 <View style={styles.locationHeader}>
                   <Icon name="map-marker" type="material-community" size={20} color="#0DCAF0" />
-                  <Text style={styles.locationTitle}>Pickup Location</Text>
+                  <Text style={styles.locationTitle}>DropOff Location</Text>
                 </View>
                 <Text style={styles.locationText}>{driverDetails?.location || "N/A"}</Text>
               </View>
@@ -185,7 +198,11 @@ const DriverInfoBlurView = ({ route, navigation }) => {
                 </TouchableOpacity>
 
 
-                <TouchableOpacity style={[styles.actionButton, styles.messageButton]} onPress={() => navigation.navigate("DriverCommunicationBottomSheet")}>
+                {/* <TouchableOpacity style={[styles.actionButton, styles.messageButton]} onPress={() => navigation.navigate("DriverCommunicationBottomSheet")}> */}
+                <TouchableOpacity
+                  style={[styles.actionButton, styles.disabledButton]}
+                  disabled={true}
+                >
                   <Icon name="message-text" type="material-community" size={20} color="#FFFFFF" />
                   <Text style={styles.actionButtonText}>Message</Text>
                 </TouchableOpacity>
@@ -250,28 +267,6 @@ const DriverInfoBlurView = ({ route, navigation }) => {
                 </View>
 
                 <View style={styles.divider} />
-
-                {/* <View style={styles.featuresContainer}>
-                  <Text style={styles.featuresTitle}>Features</Text>
-                  <View style={styles.featuresGrid}>
-                    <View style={styles.featureItem}>
-                      <Icon name="air-conditioner" type="material-community" size={20} color="#0DCAF0" />
-                      <Text style={styles.featureText}>AC</Text>
-                    </View>
-                    <View style={styles.featureItem}>
-                      <Icon name="music" type="material-community" size={20} color="#0DCAF0" />
-                      <Text style={styles.featureText}>Music</Text>
-                    </View>
-                    <View style={styles.featureItem}>
-                      <Icon name="usb-port" type="material-community" size={20} color="#0DCAF0" />
-                      <Text style={styles.featureText}>USB</Text>
-                    </View>
-                    <View style={styles.featureItem}>
-                      <Icon name="seatbelt" type="material-community" size={20} color="#0DCAF0" />
-                      <Text style={styles.featureText}>Safety</Text>
-                    </View>
-                  </View>
-                </View> */}
               </View>
             </View>
           )}
@@ -432,6 +427,11 @@ const styles = StyleSheet.create({
   },
   locationContainer: {
     padding: 16,
+  },
+  locationDivider: {
+    height: 1,
+    backgroundColor: "#F1F5F9",
+    marginHorizontal: 16,
   },
   locationHeader: {
     flexDirection: "row",

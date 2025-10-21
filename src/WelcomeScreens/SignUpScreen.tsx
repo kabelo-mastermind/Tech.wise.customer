@@ -8,21 +8,33 @@ import axios from 'axios'; // Axios for sending backend request
 import { api } from '../../api'; // Your backend API
 import { showToast } from '../constants/showToast';
 
-export default function CreateAccount({ navigation }) {
+export default function SignUpScreen({ navigation }) {
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [isChecked, setIsChecked] = useState(false);
   // const [gender, setGender] = useState('');
 
 const signUp = async () => {
-  if (!email || !password || !name) {
+  if (!email || !password || !name || !confirmPassword) {
     showToast(
       "error",
       "Missing Information",
-      "Please fill in your name, email and password to continue."
+      "Please fill in all fields to continue."
+    );
+    return;
+  }
+
+  // Check if passwords match
+  if (password !== confirmPassword) {
+    showToast(
+      "error",
+      "Passwords Don't Match",
+      "Please make sure your passwords match."
     );
     return;
   }
@@ -67,15 +79,13 @@ const signUp = async () => {
     showToast(
       "success",
       "Account Created Successfully",
-      "We’ve sent a verification link to your email. Please verify your account before logging in."
+      "We've sent a verification link to your email. Please verify your account before logging in."
     );
 
     await signOut(auth);
 
     navigation.replace('ProtectedScreen');
   } catch (error: any) {
-    // console.error('Sign up failed:', error.message);?
-
     // Map errors to friendly messages
     let friendlyMessage = "Something went wrong while creating your account. Please try again.";
 
@@ -122,7 +132,11 @@ const signUp = async () => {
             placeholder="example@gmail.com"
             value={email}
             onChangeText={(text) => setEmail(text)}
+            autoCapitalize="none"
+            keyboardType="email-address"
           />
+          
+          {/* Password Field */}
           <View style={styles.passwordContainer}>
             <TextInput
               style={styles.input}
@@ -130,6 +144,7 @@ const signUp = async () => {
               secureTextEntry={!showPassword}
               value={password}
               onChangeText={(text) => setPassword(text)}
+              autoCapitalize="none"
             />
             <TouchableOpacity
               onPress={() => setShowPassword(!showPassword)}
@@ -137,6 +152,29 @@ const signUp = async () => {
             >
               <Icon
                 name={showPassword ? 'eye-off' : 'eye'}
+                type="feather"
+                size={24}
+                color="gray"
+              />
+            </TouchableOpacity>
+          </View>
+
+          {/* Confirm Password Field */}
+          <View style={styles.passwordContainer}>
+            <TextInput
+              style={styles.input}
+              placeholder="Confirm Password"
+              secureTextEntry={!showConfirmPassword}
+              value={confirmPassword}
+              onChangeText={(text) => setConfirmPassword(text)}
+              autoCapitalize="none"
+            />
+            <TouchableOpacity
+              onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+              style={styles.eyeIcon}
+            >
+              <Icon
+                name={showConfirmPassword ? 'eye-off' : 'eye'}
                 type="feather"
                 size={24}
                 color="gray"
@@ -276,14 +314,12 @@ const styles = StyleSheet.create({
   },
   passwordContainer: {
     position: 'relative',
-
   },
   eyeIcon: {
     position: 'absolute',
     right: 12,
     top: '50%',
     transform: [{ translateY: -19 }],
-
   },
   checkboxContainer: {
     flexDirection: 'row',

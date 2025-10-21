@@ -31,6 +31,7 @@ import { api } from "../../api"
 import { addMessage, clearMessages } from "../redux/actions/messageAction"
 import WebView from "react-native-webview"
 import CancelAlertModal from "../components/CancelAlertModal"
+import { showToast } from "../constants/showToast"
 
 const SCREEN_HEIGHT = Dimensions.get("window").height
 const SCREEN_WIDTH = Dimensions.get("window").width
@@ -38,20 +39,15 @@ const SCREEN_WIDTH = Dimensions.get("window").width
 const DestinationScreen = ({ navigation, route }) => {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const tripData = useSelector((state) => state.trip?.tripData)
-  // console.log("DestinationScreen tripData---------:", tripData)
   const tripAmount = tripData.carData?.price ? Math.round(Number.parseFloat(tripData.carData.price) * 100) : 0
-  //trip data from socket notification
+
   const [tripDataSocket, setTripData] = useState(null)
-  // console.log("===================and trip data", tripData)
-  // driver id from trip data
   const driver_id = tripData?.driver_id
-  // console.log("trip data6666666666666666", driver_id);
   const user_id = useSelector((state) => state.auth?.user.user_id)
   const user_name = useSelector((state) => state.auth?.user.name)
   const userEmail = useSelector((state) => state.auth?.user.email)
   const dispatch = useDispatch()
   const trip_id = useSelector((state) => state.trip.tripData?.tripId || "")
-  // console.log("trip_id222222222222", trip_id)
 
   // Payment status from navigation params
   const [paymentStatus, setPaymentStatus] = useState(null)
@@ -63,12 +59,13 @@ const DestinationScreen = ({ navigation, route }) => {
 
       // Show appropriate message based on payment status
       if (route.params.paymentStatus === "success") {
-        alert("Payment successful! Enjoy your trip.")
+        showToast("success", "Payment Successful", "Enjoy your trip.");
       } else if (route.params.paymentStatus === "cancelled") {
-        alert("Payment cancelled. You can still complete your trip.")
+        showToast("info", "Payment Cancelled", "You cannot complete your trip.");
       } else if (route.params.paymentStatus === "error") {
-        alert(`Payment error: ${route.params.paymentError || "Unknown error"}`)
+        showToast("error", "Payment Error", route.params.paymentError || "Unknown error.");
       }
+
 
       // Clear the params to prevent showing the alert again on screen focus
       navigation.setParams({ paymentStatus: null })
@@ -82,20 +79,14 @@ const DestinationScreen = ({ navigation, route }) => {
   const { destination = {} } = useContext(DestinationContext)
   console.log("DestinationScreen destination*************************:", tripData);
 
-
   const [userOrigin] = useState({
     latitude: origin?.latitude || tripData?.pickUpCoordinates?.latitude || null,
     longitude: origin?.longitude || tripData?.pickUpCoordinates?.longitude || null,
   })
 
-  const [driverLocation, setDriverLocation] = useState({
-    latitude: null,
-    longitude: null,
-  })
-  const [userDestination, setUserDestination] = useState({
-    latitude: null,
-    longitude: null,
-  })
+  // FIXED: Initialize userDestination properly
+  const [userDestination, setUserDestination] = useState(null)
+  const [driverLocation, setDriverLocation] = useState(null)
   const [eta, setEta] = useState(null)
   const [distance, setDistance] = useState(null)
   const [etaTrip, setEtaTrip] = useState(null)
@@ -108,6 +99,23 @@ const DestinationScreen = ({ navigation, route }) => {
   const [authorizationUrl, setAuthorizationUrl] = useState(null);
   const [tripMeta, setTripMeta] = useState({});
   const [showCancelAlert, setShowCancelAlert] = useState(false)
+
+  const calculateDistance = (lat1, lon1, lat2, lon2) => {
+    const R = 6371; // Earth radius in kilometers
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLon = ((lon2 - lon1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const distance = R * c * 1000; // ✅ distance in meters
+    return distance;
+  };
+
+
 
   const handleCancelTrip = () => {
     setCancelModalVisible(true) // Show cancellation modal
@@ -145,12 +153,13 @@ const DestinationScreen = ({ navigation, route }) => {
       } else if (response.status === 404) {
         console.error("Trip not found:", await response.json())
         // Handle trip not found error here, e.g., display a message to the user
-        alert("The trip does not exist or has been removed.")
+        showToast("error", "Trip Not Found", "The trip does not exist or has been removed.");
       } else {
         console.log("Trip status not updated:", await response.json())
       }
     } catch (error) {
       console.error("Error canceling the trip:", error)
+      showToast("error", "Trip Not Found", "The trip does not exist or has been removed.");
     }
   }
 
@@ -169,12 +178,12 @@ const DestinationScreen = ({ navigation, route }) => {
         return response.data.customer_code
       } else {
         console.error("No customer code found in response:", response.data)
-        alert("Please complete your profile before making payments.")
+        showToast("info", "Profile Incomplete", "Please complete your profile before making payments.");
         return null
       }
     } catch (error) {
       console.error("Error fetching customer code:", error)
-      alert("There was an error processing your payment. Please try again or complete your profile.")
+      showToast("error", "Payment Error", "There was an error processing your payment. Please try again.");
       return null
     }
   }
@@ -190,7 +199,7 @@ const DestinationScreen = ({ navigation, route }) => {
     // Listen for when the trip is accepted 
     listenToTripAccepted((data) => {
       // console.log("✅ Trip accepted:", data);
-      // alert(`Your trip has been accepted! Trip ID: ${data.tripId}`);
+      showToast("success", "Trip Accepted", "Your trip has been accepted!");
       setTripStatus("accepted")
       setTripData(data)
       dispatch({
@@ -209,32 +218,39 @@ const DestinationScreen = ({ navigation, route }) => {
 
     // listener runs when trip starts
     listenToTripStarted((data) => {
-      setTripStatus("started");
-      alert(`Your trip has been started! Trip ID: ${data.tripId}`);
-      console.log("Trip started data^^^^^^^^^^^^^^^^^^^^^^^^:", data);
+      setTripStatus("started")
+      showToast("info", "Trip Started", "Your trip has been started!")
+      console.log("Trip started data:", data)
 
-      if (destination?.latitude && destination?.longitude) {
-        setUserDestination({
-          latitude: destination.latitude || tripData?.dropOffCoordinates?.latitude || null,
-          longitude: destination.longitude || tripData?.dropOffCoordinates?.longitude || null,
-        });
-      } else {
-        console.warn("Destination from context is not ready or incomplete");
+      const newDestination = destination?.latitude && destination?.longitude
+        ? {
+          latitude: destination.latitude,
+          longitude: destination.longitude,
+        }
+        : data?.dropOffCoordinates?.latitude && data?.dropOffCoordinates?.longitude
+          ? {
+            latitude: data.dropOffCoordinates.latitude,
+            longitude: data.dropOffCoordinates.longitude,
+          }
+          : userDestination
+
+      if (newDestination) {
+        console.log("Setting destination on trip start:", newDestination)
+        setUserDestination(newDestination)
       }
+
       dispatch({
         type: 'SET_TRIP_DATA',
         payload: { status: 'on-going' }
-      });
-    });
+      })
+    })
+
 
     // Listen for when the trip is ended
     // Listen for when the trip is ended
     listenToTripEnded((data) => {
       console.log("Trip ended data:", data); // logs the whole object
-      // console.log("Trip ID:", data?.tripId);
-      // console.log("Driver ID'''''''':", data?.driver_id);
-
-      // alert(`Your trip has ended! Trip ID: ${data.tripId}`);
+      showToast("success", "Trip Ended", "Your trip has ended!");
       setTripStatus("ended");
       dispatch({
         type: 'SET_TRIP_DATA',
@@ -255,7 +271,7 @@ const DestinationScreen = ({ navigation, route }) => {
     // Listen for when the trip is declined
     listenToTripDeclined((data) => {
       console.log("❌ Trip declined:", data)
-      // alert(`Your trip has been declined! Trip ID: ${data.tripId}`);
+      showToast("error", "Trip Declined", "Your trip has been declined!");
       setTripStatus("declined")
       dispatch({
         type: 'SET_TRIP_DATA',
@@ -286,18 +302,27 @@ const DestinationScreen = ({ navigation, route }) => {
   // Fetch trip statuses
   const [tripStatusAccepted, setTripStatusAccepted] = useState(null)
   // Initialize state from tripData using useEffect
+  // FIXED: Better trip status handling
   useEffect(() => {
     if (tripData?.status) {
-      setTripStatusAccepted(tripData.status);
+      setTripStatusAccepted(tripData.status)
 
+      // Set destination when trip becomes ongoing
       if (tripData.status === "on-going") {
-        setUserDestination({
-          latitude: tripData?.dropOffCoordinates?.latitude || null,
-          longitude: tripData?.dropOffCoordinates?.longitude || null,
-        });
+        const newDestination = tripData?.dropOffCoordinates?.latitude && tripData?.dropOffCoordinates?.longitude
+          ? {
+              latitude: tripData.dropOffCoordinates.latitude,
+              longitude: tripData.dropOffCoordinates.longitude,
+            }
+          : userDestination
+
+        if (newDestination && !userDestination) {
+          console.log("Setting destination from trip data status:", newDestination)
+          setUserDestination(newDestination)
+        }
       }
     }
-  }, [tripData?.status]); // Only runs when status changes
+  }, [tripData?.status, tripData?.dropOffCoordinates])
 
   // Fetch trip statuses every 5 seconds
   // Fetch trip statuses periodically
@@ -319,7 +344,12 @@ const DestinationScreen = ({ navigation, route }) => {
           }
         }
       } catch (error) {
-        console.error("⚠️ Error fetching trip statuses:", error);
+        showToast(
+          "error",
+          "Error",
+          "Failed to fetch trip statuses. Please try again later."
+        );
+
       }
     };
 
@@ -327,73 +357,6 @@ const DestinationScreen = ({ navigation, route }) => {
     const intervalId = setInterval(fetchTripStatuses, 5000);
     return () => clearInterval(intervalId);
   }, [user_id, api, tripStatusAccepted]); // Added tripStatusAccepted to deps
-
-
-  // initiate payment function
-  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
-
-  const checkAndInitiatePayment = async () => {
-    if (isProcessingPayment) return;
-    setIsProcessingPayment(true);
-
-    try {
-      const code = await fetchCustomerCode();
-      if (!code || tripAmount <= 0) {
-        Alert.alert("Error", "Invalid payment code or amount.");
-        setIsProcessingPayment(false);
-        return;
-      }
-
-      console.log(`Initiating payment: ${tripAmount} ZAR`);
-
-      const response = await fetch(api + "initialize-payment", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: userEmail,
-          amount: tripAmount,
-          user_id: user_id,
-          driverId: driver_id,
-        }),
-      });
-
-      const data = await response.json();
-      console.log("Backend init response:", data);
-
-      if (data.charged) {
-        Alert.alert("Payment Success", "Your saved card was charged successfully.");
-        setPaymentStatus("success");
-        setTripMeta({
-          tripId: tripData?.tripId,
-          driverName: tripData?.driverName || "Your Driver",
-          tripDistance: distanceTrip,
-          tripDuration: etaTrip,
-        });
-      } else if (data.data?.authorization_url) {
-        console.log("Redirecting user to Paystack WebView...");
-        setAuthorizationUrl(data.data.authorization_url);
-        setTripMeta({
-          tripId: tripData?.tripId,
-          driverName: tripData?.driverName || "Your Driver",
-          tripDistance: distanceTrip,
-          tripDuration: etaTrip,
-        });
-        setPaymentStatus("pending"); // waiting for WebView completion
-      } else {
-        Alert.alert(
-          "Payment Failed",
-          "Could not initialize payment. Press retry after checking your card."
-        );
-        setPaymentStatus("failed");
-      }
-    } catch (err) {
-      console.error("Payment init error:", err.message);
-      Alert.alert("Error", "Something went wrong while processing payment.");
-      setPaymentStatus("failed");
-    } finally {
-      setIsProcessingPayment(false); // always reset
-    }
-  };
 
   // hndle payment initiation and trip status changes
   useEffect(() => {
@@ -418,6 +381,73 @@ const DestinationScreen = ({ navigation, route }) => {
       tripData?.paymentType === "Credit Card"
     ) {
       console.log("Trip is ongoing, checking payment status...");
+
+      const checkAndInitiatePayment = async () => {
+        const code = await fetchCustomerCode();
+        if (code && tripAmount > 0) {
+          console.log(`Initiating payment: ${tripAmount} ZAR`);
+
+          try {
+            const response = await fetch(api + "initialize-payment", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                email: userEmail,
+                amount: tripAmount,
+                user_id: user_id,
+                driverId: driver_id,
+              }),
+            });
+
+            const data = await response.json();
+            console.log("Backend init response from payment gateway:", data);
+
+            if (data.charged) {
+              // ✅ Payment was automatically charged!
+              showToast(
+                "success",
+                "Payment Success",
+                "Your saved card was charged successfully."
+              );
+              setPaymentStatus("success"); // Update your payment status
+              setTripMeta({
+                tripId: tripData?.tripId,
+                driverName: tripData?.driverName || "Your Driver",
+                tripDistance: distanceTrip,
+                tripDuration: etaTrip,
+              });
+              // Optionally navigate or update UI here
+            } else if (data.data?.authorization_url) {
+              // ✅ New payment → need to open WebView
+              console.log("Redirecting user to Paystack WebView...");
+              setTripMeta({
+                tripId: tripData?.tripId,
+                driverName: tripData?.driverName || "Your Driver",
+                tripDistance: distanceTrip,
+                tripDuration: etaTrip,
+              });
+              setAuthorizationUrl(data.data.authorization_url);
+            } else {
+
+              showToast(
+                "error",
+                "Error",
+                "Failed to initialize or charge payment."
+              );
+            }
+          } catch (err) {
+            console.error("Payment init error:", err.message);
+            showToast(
+              "error",
+              "Error",
+              "Something went wrong while processing payment."
+            );
+          }
+        }
+      };
+
       checkAndInitiatePayment();
     }
   }, [tripStatusAccepted, paymentStatus, tripData]); // Proper dependencies
@@ -437,7 +467,11 @@ const DestinationScreen = ({ navigation, route }) => {
             // console.log("🚗 Driver location updated:", data);
 
             if (!data.latitude || !data.longitude) {
-              console.warn("⚠️ Missing latitude or longitude in Firestore data", data)
+              showToast(
+                "error",
+                "Location Error",
+                "Driver location data is incomplete."
+              )
               return
             }
 
@@ -447,11 +481,19 @@ const DestinationScreen = ({ navigation, route }) => {
               // timestamp: data.timestamp ?? prev.timestamp,
             }))
           } else {
-            console.warn("❌ No driver location found in Firestore.")
+            showToast(
+              "info",
+              "Driver Location",
+              "No driver location found yet."
+            )
           }
         },
         (error) => {
-          console.error("🔥 Error fetching driver location:", error)
+          showToast(
+            "error",
+            "Error",
+            "Failed to fetch driver location. Please try again."
+          )
         },
       )
 
@@ -461,6 +503,40 @@ const DestinationScreen = ({ navigation, route }) => {
       }
     }
   }, [tripStatusAccepted, driver_id])
+
+  const [hasAlerted, setHasAlerted] = useState({ nearby: false, close: false, arrived: false });
+
+  useEffect(() => {
+    if (!driverLocation?.latitude || !userOrigin?.latitude) return;
+
+    // compute distance between driver and user origin
+    const distanceMeters = calculateDistance(
+      userOrigin.latitude,
+      userOrigin.longitude,
+      driverLocation.latitude,
+      driverLocation.longitude
+    );
+
+    // store thresholds so we alert only once per stage
+    setDistance(distanceMeters);
+
+    if (distanceMeters <= 50 && !hasAlerted.arrived) {
+      showToast("success", "Driver Arrived", "Your driver has arrived!");
+      setHasAlerted((prev) => ({ ...prev, arrived: true }));
+    } else if (distanceMeters <= 250 && !hasAlerted.close) {
+      showToast("info", "Driver Close", "Your driver is almost there (250 m).");
+      setHasAlerted((prev) => ({ ...prev, close: true }));
+    } else if (distanceMeters <= 500 && !hasAlerted.nearby) {
+      showToast("info", "Driver Nearby", "Your driver is nearby (500 m).");
+      setHasAlerted((prev) => ({ ...prev, nearby: true }));
+    }
+  }, [driverLocation]);
+
+  useEffect(() => {
+    if (distance > 600) {
+      setHasAlerted({ nearby: false, close: false, arrived: false });
+    }
+  }, [distance]);
 
   // **Fetch Route Details(distance and time) for User and driverLocation**
   useEffect(() => {
@@ -484,7 +560,12 @@ const DestinationScreen = ({ navigation, route }) => {
           setDistance(firstLeg.distance?.text || "N/A")
         }
       } catch (error) {
-        console.error("Error fetching route details:", error)
+        showToast(
+          "error",
+          "Error",
+          "Failed to fetch route details. Please try again."
+        )
+
       }
     }
 
@@ -513,7 +594,12 @@ const DestinationScreen = ({ navigation, route }) => {
           setDistanceTrip(firstLegDestination.distance?.text || "N/A")
         }
       } catch (error) {
-        console.error("Error fetching route details:", error)
+        showToast(
+          "error",
+          "Error",
+          "Failed to fetch route details. Please try again."
+        )
+
       }
     }
 
@@ -531,7 +617,10 @@ const DestinationScreen = ({ navigation, route }) => {
     }
   }
 
-
+  // FIXED: Determine when to show directions
+  const shouldShowDirections = tripStatusAccepted === "on-going" && 
+                              userOrigin?.latitude && 
+                              userDestination?.latitude
   if (authorizationUrl) {
     return (
       <WebView
@@ -551,7 +640,11 @@ const DestinationScreen = ({ navigation, route }) => {
             }
           } else if (navState.url.includes("payment-error")) {
             setAuthorizationUrl(null);
-            Alert.alert("Payment Failed", "Something went wrong during payment.");
+            showToast(
+              "error",
+              "Payment Failed",
+              "Something went wrong during payment."
+            )
           }
         }}
       />
@@ -587,30 +680,21 @@ const DestinationScreen = ({ navigation, route }) => {
               </View>
             </View>
           </View>
-
-          {/* {tripStatus !== "accepted" && (
-            <TouchableOpacity
-              style={styles.profilePictureContainer}
-              onPress={() => navigation.navigate("DriverCommunicationBottomSheet")}
-            >
-              <Image source={require("../../assets/call.png")} style={styles.profilePicture} />
-            </TouchableOpacity>
-          )} */}
           {/* Cancel Trip Icon positioned below the call button */}
-
-
           <TouchableOpacity style={styles.rectangleButton} onPress={handleNavigation}>
             <Text style={styles.buttonText}>View Driver</Text>
           </TouchableOpacity>
 
           {/* Trip Cancellation Modal */}
           <TripCancelationModal isVisible={cancelModalVisible} onClose={handleCloseModal} onCancel={handleCancel} />
-          {tripData?.driver_id && (
+       {tripData?.driver_id && (
             <MapComponent
               driverLocation={driverLocation}
-              // driverId={String(tripData.driver_id)}
+              tripStarted={tripStatus}
               userOrigin={userOrigin}
               userDestination={userDestination}
+              showDirections={shouldShowDirections} // FIXED: Added this prop
+              key={`map-${userDestination?.latitude}-${userDestination?.longitude}`} // FIXED: Force re-render when destination changes
             />
           )}
         </View>
@@ -621,18 +705,6 @@ const DestinationScreen = ({ navigation, route }) => {
         message="Trip was cancelled."
         onClose={() => setShowCancelAlert(false)}
       />
-      {paymentStatus === "failed" && (
-        <TouchableOpacity
-          style={styles.retryButton}
-          onPress={checkAndInitiatePayment}
-          disabled={isProcessingPayment}
-        >
-          <Text style={styles.retryButtonText}>
-            {isProcessingPayment ? "Processing..." : "Retry Payment"}
-          </Text>
-        </TouchableOpacity>
-      )}
-
     </SafeAreaView >
   )
 }
@@ -753,19 +825,6 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 16,
     fontWeight: "600",
-  },
-    retryButton: {
-    backgroundColor: "#FF6B6B",
-    paddingVertical: 12,
-    paddingHorizontal: 25,
-    borderRadius: 8,
-    alignItems: "center",
-    marginTop: 20,
-  },
-  retryButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "bold",
   },
 })
 

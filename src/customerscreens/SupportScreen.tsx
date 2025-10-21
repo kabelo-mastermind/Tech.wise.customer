@@ -23,7 +23,7 @@ const { width } = Dimensions.get("window")
 
 const SupportScreen = ({ navigation }) => {
   const handleEmailSupport = () => {
-    const email = "support@example.com" // Replace with your support email
+    const email = "nthomecouriers@gmail.com" // Replace with your support email
     const subject = "Support Request"
     const body = "Hi, I need help with..."
     const url = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
@@ -56,7 +56,7 @@ const SupportScreen = ({ navigation }) => {
       description: "Speak directly with our support team",
       icon: "call-outline",
       iconColor: "#0DCAF0",
-      onPress: handleCallSupport,
+      // onPress: handleCallSupport,
     },
     {
       id: "chat",
@@ -64,7 +64,7 @@ const SupportScreen = ({ navigation }) => {
       description: "Chat with our support agents in real-time",
       icon: "chatbubble-ellipses-outline",
       iconColor: "#0DCAF0",
-      onPress: handleLiveChat,
+      // onPress: handleLiveChat,
     },
   ]
 

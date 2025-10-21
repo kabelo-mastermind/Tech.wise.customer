@@ -19,6 +19,7 @@ const CarListingBottomSheet = ({ navigation, route }) => {
   // Accessing distance and duration from the Redux store
   const distance = useSelector(state => state.location.distance);
   const duration = useSelector(state => state.location.duration);
+  console.log("disstanceeeeeeeeeeeeeee:", distance, "durationssssssssssss:", duration);
   const driverId = route?.params?.driverId || null;
   // const driverId = useSelector((state) => state.trip.tripData?.driver_id || "");
   // console.log("Driver IDoooooooooooooo:", driverId);
@@ -44,7 +45,6 @@ const CarListingBottomSheet = ({ navigation, route }) => {
         const fullCarData = response.data;
 
         setCarData(fullCarData);
-        
 
         console.log("Fetched Car Data:", fullCarData);
       } catch (error) {
