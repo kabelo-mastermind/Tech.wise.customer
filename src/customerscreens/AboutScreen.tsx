@@ -23,6 +23,7 @@ import { LinearGradient } from "expo-linear-gradient"
 import CustomAlert from "../components/AllCustomAlert";
 import { useSelector } from "react-redux"
 import ChatBot from "../components/ChatBot" // Import the ChatBot component
+import { api } from "../../api"
 
 
 const { width } = Dimensions.get("window")

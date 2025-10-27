@@ -28,7 +28,7 @@ const MAX_DISTANCE_KM = 200 // Maximum allowed distance in kilometers
 export default function RequestScreen({ navigation }) {
   const user = useSelector((state) => state.auth.user)
   console.log("from logged in user))))))))))))))", user);
-  
+
   const dispatch = useDispatch()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const toggleDrawer = () => setDrawerOpen(!drawerOpen)
@@ -300,38 +300,38 @@ export default function RequestScreen({ navigation }) {
   }, []);
 
   // ✅ UseEffect with delay 2-5 delays before navigating
-useEffect(() => {
-  if (destination?.latitude && destination?.longitude) {
-    if (!customerCode) {
-      setShowProfileAlert(true);
-      return;
+  useEffect(() => {
+    if (destination?.latitude && destination?.longitude) {
+      if (!customerCode) {
+        setShowProfileAlert(true);
+        return;
+      }
+
+      if (!checkDistanceLimit(origin, destination)) {
+        setShowDistanceAlert(true);
+        dispatchDestination({ type: "RESET_DESTINATION" });
+        setDestination(false);
+        return;
+      }
+
+      // ⏳ Timer 1: Show directions after 2 seconds
+      const directionTimer = setTimeout(() => {
+        setShowDirections(true);
+      }, 2000);
+
+      // ⏳ Timer 2: Navigate after 5 seconds
+      const navigationTimer = setTimeout(() => {
+        navigation.navigate("CarListingBottomSheet");
+      }, 5000);
+
+      // 🧹 Cleanup timers when destination changes
+      return () => {
+        clearTimeout(directionTimer);
+        clearTimeout(navigationTimer);
+        setShowDirections(false);
+      };
     }
-
-    if (!checkDistanceLimit(origin, destination)) {
-      setShowDistanceAlert(true);
-      dispatchDestination({ type: "RESET_DESTINATION" });
-      setDestination(false);
-      return;
-    }
-
-    // ⏳ Timer 1: Show directions after 2 seconds
-    const directionTimer = setTimeout(() => {
-      setShowDirections(true);
-    }, 2000);
-
-    // ⏳ Timer 2: Navigate after 5 seconds
-    const navigationTimer = setTimeout(() => {
-      navigation.navigate("CarListingBottomSheet");
-    }, 5000);
-
-    // 🧹 Cleanup timers when destination changes
-    return () => {
-      clearTimeout(directionTimer);
-      clearTimeout(navigationTimer);
-      setShowDirections(false);
-    };
-  }
-}, [destination?.latitude, destination?.longitude]);
+  }, [destination?.latitude, destination?.longitude]);
 
   const clearOrigionAddress = () => {
     if (originRef.current) {
@@ -352,10 +352,37 @@ useEffect(() => {
   }
 
 
+  const [showLoginError, setShowLoginError] = useState(false);
+
+  useEffect(() => {
+    // Wait 2–3 seconds before showing login error
+    const timer = setTimeout(() => {
+      if (!user || !user.user_id) {
+        setShowLoginError(true);
+      }
+    }, 2500); // 2.5 seconds
+
+    return () => clearTimeout(timer);
+  }, [user]);
+
+  if (showLoginError) {
+    return (
+      <LoadingState
+        message="Login verification is taking longer than expected. Please login again."
+        showButton={true}
+        buttonText="Go back"
+        onButtonPress={() => {
+          navigation.replace("LogoutPage"); // Redirect to login screen
+        }}
+      />
+    );
+  }
 
   if (isLoading) {
-    return <LoadingState />
+      return <LoadingState message="Verifying your login details..." />;
   }
+
+
 
   return (
     <View style={{ flex: 1, backgroundColor: "white" }}>
@@ -476,7 +503,7 @@ useEffect(() => {
           </View>
         </View>
 
-        <MapComponent key={mapKey} userOrigin={origin} userDestination={destination} onDestinationDrag={handleDestinationDrag} onDestinationDragEnd={handleDestinationDragEnd} showDirections ={showDirections} />
+        <MapComponent key={mapKey} userOrigin={origin} userDestination={destination} onDestinationDrag={handleDestinationDrag} onDestinationDragEnd={handleDestinationDragEnd} showDirections={showDirections} />
         {/* Show loading indicator while reverse geocoding during drag */}
         {isDragging && (
           <View style={styles.draggingIndicator}>

@@ -99,6 +99,7 @@ const DestinationScreen = ({ navigation, route }) => {
   const [authorizationUrl, setAuthorizationUrl] = useState(null);
   const [tripMeta, setTripMeta] = useState({});
   const [showCancelAlert, setShowCancelAlert] = useState(false)
+  const [startedTrip, setStartedTrip] = useState(false)
 
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
     const R = 6371; // Earth radius in kilometers
@@ -219,6 +220,7 @@ const DestinationScreen = ({ navigation, route }) => {
     // listener runs when trip starts
     listenToTripStarted((data) => {
       setTripStatus("started")
+      setStartedTrip(true)
       showToast("info", "Trip Started", "Your trip has been started!")
       console.log("Trip started data:", data)
 
@@ -250,6 +252,8 @@ const DestinationScreen = ({ navigation, route }) => {
     // Listen for when the trip is ended
     listenToTripEnded((data) => {
       console.log("Trip ended data:", data); // logs the whole object
+      setStartedTrip(false)
+
       showToast("success", "Trip Ended", "Your trip has ended!");
       setTripStatus("ended");
       dispatch({
@@ -690,7 +694,7 @@ const DestinationScreen = ({ navigation, route }) => {
        {tripData?.driver_id && (
             <MapComponent
               driverLocation={driverLocation}
-              tripStarted={tripStatus}
+              tripStarted={startedTrip}
               userOrigin={userOrigin}
               userDestination={userDestination}
               showDirections={shouldShowDirections} // FIXED: Added this prop

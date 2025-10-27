@@ -70,157 +70,163 @@ const LoginScreen = ({ navigation }) => {
     return () => unsubscribe();
   }, [navigation, dispatch]);
 
-const signIn = async () => {
-  if (!email || !password) {
-    showToast("info", "Missing Info", "Please enter both email and password.");
-    return;
-  }
-
-  setAuthenticating(true);
-  try {
-    const userCredential = await signInWithEmailAndPassword(auth, email.trim().toLowerCase(), password);
-    const user = userCredential.user;
-
-    await user.reload();
-    const currentUser = auth.currentUser;
-
-    if (!currentUser.emailVerified) {
-      showToast("info", "Verify your email", "Please check your inbox before logging in.");
-      navigation.navigate("ProtectedScreen");
+  const signIn = async () => {
+    if (!email || !password) {
+      showToast("info", "Missing Info", "Please enter both email and password.");
       return;
     }
 
-    const userRef = doc(db, "users", user.uid);
-    const userDoc = await getDoc(userRef);
+    setAuthenticating(true);
+    try {
+      const userCredential = await signInWithEmailAndPassword(auth, email.trim().toLowerCase(), password);
+      const user = userCredential.user;
 
-    if (!userDoc.exists()) {
-      showToast("error", "Account not found", "Please contact support.");
-      return;
-    }
+      await user.reload();
+      const currentUser = auth.currentUser;
 
-    const userData = userDoc.data();
-    console.log("User data from Firestore:", userData);
-    console.log("Firebase user:", user);
+      if (!currentUser.emailVerified) {
+        showToast("info", "Verify your email", "Please check your inbox before logging in.");
+        navigation.navigate("ProtectedScreen");
+        return;
+      }
 
-    if (userData.role !== "user") {
-      showToast("error", "Access denied", "Only customers are allowed to log in.");
-      await auth.signOut();
-      navigation.replace("LogoutPage");
-      return;
-    }
+      const userRef = doc(db, "users", user.uid);
+      const userDoc = await getDoc(userRef);
 
-    // Store basic user info first
-    await AsyncStorage.setItem("userId", user.uid);
-    await AsyncStorage.setItem("emailVerified", "true");
-    await AsyncStorage.setItem("userEmail", user.email);
+      if (!userDoc.exists()) {
+        showToast("error", "Account not found", "Please contact support.");
+        return;
+      }
 
-    setUserId(user.uid);
-    setUserAuth(user);
+      const userData = userDoc.data();
+      console.log("User data from Firestore:", userData);
+      console.log("Firebase user:", user);
 
-    // Set basic user data in Redux first
-    dispatch(setUser({
-      name: userData.name || user.displayName,
-      email: user.email,
-      id: user.uid,
-      role: userData.role,
-    }));
+      if (userData.role !== "user") {
+        showToast("error", "Access denied", "Only customers are allowed to log in.");
+        await auth.signOut();
+        navigation.replace("LogoutPage");
+        return;
+      }
 
-    // Then fetch additional customer data from your API
-    await fetchCustomerUserID(user, userData);
+      // Store basic user info first
+      await AsyncStorage.setItem("userId", user.uid);
+      await AsyncStorage.setItem("emailVerified", "true");
+      await AsyncStorage.setItem("userEmail", user.email);
 
-  } catch (error) {
-    console.log("Login error:", error);
-    
-    let errorMessage = "Please check your email and password.";
-    if (error.code === 'auth/invalid-credential') {
-      errorMessage = "Invalid email or password.";
-    } else if (error.code === 'auth/too-many-requests') {
-      errorMessage = "Too many failed attempts. Please try again later.";
-    } else if (error.code === 'auth/network-request-failed') {
-      errorMessage = "Network error. Please check your internet connection.";
-    }
-    
-    showToast("error", "Login failed", errorMessage);
-  } finally {
-    setAuthenticating(false);
-  }
-};
+      setUserId(user.uid);
+      setUserAuth(user);
 
- const fetchCustomerUserID = async (user, userData) => {
-  try {
-    console.log("Attempting to fetch customer data for email:", email);
-    
-    const response = await axios.post(api + 'login', {
-      email: email.trim().toLowerCase(), // Ensure consistent email format
-    });
-    
-    console.log("API Response:", response.data);
-    
-    if (response.data && response.data.id) {
-      const user_id = response.data.id;
-      const customer_code = response.data.customer_code;
-      
-      setUser_Id(user_id);
-      console.log("Successfully fetched - user_id:", user_id, "customer_code:", customer_code);
-
-      // Update Redux store with complete user data
+      // Set basic user data in Redux first
       dispatch(setUser({
-        name: userData.name || user.displayName || response.data.name,
+        name: userData.name || user.displayName,
         email: user.email,
         id: user.uid,
         role: userData.role,
-        user_id: user_id,
-        customer_code: customer_code,
-        profile_picture: response.data?.profile_picture,
       }));
 
-      // Store in AsyncStorage for persistence
-      await AsyncStorage.setItem("user_id", user_id.toString());
-      if (customer_code) {
-        await AsyncStorage.setItem("customer_code", customer_code);
+      // Then fetch additional customer data from your API
+      await fetchCustomerUserID(user, userData);
+
+    } catch (error) {
+      console.log("Login error:", error);
+
+      let errorMessage = "Please check your email and password.";
+      if (error.code === 'auth/invalid-credential') {
+        errorMessage = "Invalid email or password.";
+      } else if (error.code === 'auth/too-many-requests') {
+        errorMessage = "Too many failed attempts. Please try again later.";
+      } else if (error.code === 'auth/network-request-failed') {
+        errorMessage = "Network error. Please check your internet connection.";
       }
-      
-      // Navigate after successful data fetch
-      showToast("success", "Welcome back!", "You've successfully logged in!");
-      navigation.replace('DrawerNavigator');
-      
-    } else {
-      console.warn("No user ID found in API response:", response.data);
-      showToast("warning", "Profile Incomplete", "Please complete your profile setup.");
-      // Still navigate but with limited functionality
-      navigation.replace('DrawerNavigator');
+
+      showToast("error", "Login failed", errorMessage);
+    } finally {
+      setAuthenticating(false);
     }
-  } catch (error) {
-    console.error("Error fetching customer data:", error);
-    
-    if (error.response) {
-      // Server responded with error status
-      console.error("Server error:", error.response.status, error.response.data);
-      if (error.response.status === 404) {
-        showToast("warning", "Profile Not Found", "Please complete your profile setup.");
+  };
+
+  const fetchCustomerUserID = async (user, userData) => {
+    try {
+      console.log("Attempting to fetch customer data for email:", email);
+
+      const response = await axios.post(api + 'login', {
+        email: email.trim().toLowerCase(),
+      });
+
+      console.log("API Response:", response.data);
+
+      if (response.data && response.data.id) {
+        const user_id = response.data.id;
+        const customer_code = response.data.customer_code;
+
+        setUser_Id(user_id);
+        console.log("Successfully fetched - user_id:", user_id, "customer_code:", customer_code);
+
+        // ✅ Wait for Redux update and AsyncStorage to finish
+        dispatch(setUser({
+          name: userData.name || user.displayName || response.data.name,
+          email: user.email,
+          id: user.uid,
+          role: userData.role,
+          user_id,
+          customer_code,
+          profile_picture: response.data?.profile_picture,
+        }));
+
+        await AsyncStorage.setItem("user_id", user_id.toString());
+        if (customer_code) await AsyncStorage.setItem("customer_code", customer_code);
+        
+        if (user_id && customer_code && userData.role) {
+          // ✅ Delay navigation slightly to ensure Redux + Storage are ready
+          setTimeout(() => {
+            navigation.replace('DrawerNavigator');
+          }, 1500); // 1.5s delay
+        }
       } else {
-        showToast("error", "Server Error", "Unable to fetch user profile.");
+        console.warn("No user ID found in API response:", response.data);
+        showToast("warning", "Profile Incomplete", "Please complete your profile setup.");
+
+
+        // Optional: delay navigation even here
+        setTimeout(() => {
+          navigation.replace('DrawerNavigator');
+        }, 1500);
       }
-    } else if (error.request) {
-      // Network error
-      console.error("Network error:", error.request);
-      showToast("error", "Network Error", "Please check your internet connection.");
-    } else {
-      // Other errors
-      console.error("Error:", error.message);
-      showToast("error", "Unexpected Error", "Please try again.");
+
+    } catch (error) {
+      console.error("Error fetching customer data:", error);
+
+      if (error.response) {
+        console.error("Server error:", error.response.status, error.response.data);
+        if (error.response.status === 404) {
+          showToast("warning", "Profile Not Found", "Please complete your profile setup.");
+        } else {
+          showToast("error", "Server Error", "Unable to fetch user profile.");
+        }
+      } else if (error.request) {
+        console.error("Network error:", error.request);
+        showToast("error", "Network Error", "Please check your internet connection.");
+      } else {
+        console.error("Error:", error.message);
+        showToast("error", "Unexpected Error", "Please try again.");
+      }
+
+      // Fallback: still store minimal data before navigation
+      dispatch(setUser({
+        name: userData.name || user.displayName,
+        email: user.email,
+        id: user.uid,
+        role: userData.role,
+      }));
+
+      // ✅ Add delay here too
+      setTimeout(() => {
+        navigation.replace('DrawerNavigator');
+      }, 1500);
     }
-    
-    // Navigate anyway but with basic user data
-    dispatch(setUser({
-      name: userData.name || user.displayName,
-      email: user.email,
-      id: user.uid,
-      role: userData.role,
-    }));
-    navigation.replace('DrawerNavigator');
-  }
-};
+  };
+
 
   // Responsive style calculations
   const responsiveStyles = createResponsiveStyles(isSmallScreen, isLargeScreen, width, height);

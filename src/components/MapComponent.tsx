@@ -48,6 +48,7 @@ const MapComponent = ({
   userOrigin,
   userDestination,
   driverLocation,
+  tripStarted,
   onDestinationDrag,
   onDestinationDragEnd,
   onDestinationDragStart, // Added this prop
@@ -62,9 +63,10 @@ const MapComponent = ({
       userOrigin,
       userDestination,
       driverLocation,
+      tripStarted, // Added tripStarted to debug logs
       showDirections
     })
-  }, [userOrigin, userDestination, driverLocation, showDirections])
+  }, [userOrigin, userDestination, driverLocation, showDirections, tripStarted])
 
   // Optimize map centering with useCallback
   const centerMap = useCallback(() => {
@@ -101,7 +103,7 @@ const MapComponent = ({
     const coordinates = []
 
     // Add all valid coordinates
-    if (userOrigin?.latitude && userOrigin?.longitude) {
+    if (userOrigin?.latitude && userOrigin?.longitude && !tripStarted) {
       coordinates.push(userOrigin)
     }
 
@@ -124,7 +126,7 @@ const MapComponent = ({
         animated: true,
       })
     }
-  }, [userOrigin, userDestination, driverLocation])
+  }, [userOrigin, userDestination, driverLocation, tripStarted])
 
   // Effect for centering map
   useEffect(() => {
@@ -202,7 +204,7 @@ const MapComponent = ({
         showsUserLocation={false} // Added to prevent conflicts
       >
         {/* Render origin marker */}
-        {userOrigin?.latitude && userOrigin?.longitude && (
+        {userOrigin?.latitude && userOrigin?.longitude && !tripStarted && (
           <OriginMarker coordinate={userOrigin} />
         )}
 
@@ -221,21 +223,38 @@ const MapComponent = ({
           <DriverMarker coordinate={driverLocation} />
         )}
 
-        {/* Render directions - fixed condition */}
-        {showDirections && userOrigin?.latitude && userOrigin?.longitude && userDestination?.latitude && userDestination?.longitude && (
-          <MapViewDirections
-            origin={userOrigin}
-            destination={userDestination}
-            apikey={GOOGLE_MAPS_APIKEY}
-            strokeWidth={4}
-            strokeColor="#2c3e50"
-            onReady={onDirectionsReady}
-            onError={onDirectionsError}
-            precision="high"
-            timePrecision="now"
-            optimizeWaypoints={true}
-            mode="DRIVING" // Explicitly set mode
-          />
+        {/* Render directions based on trip status */}
+        {showDirections && userDestination?.latitude && userDestination?.longitude && (
+          tripStarted && driverLocation?.latitude && driverLocation?.longitude ? (
+            // During trip: Show directions from driver to destination
+            <MapViewDirections
+              origin={driverLocation}
+              destination={userDestination}
+              apikey={GOOGLE_MAPS_APIKEY}
+              strokeWidth={4}
+              strokeColor="#4CAF50" // Different color for active trip
+              onReady={onDirectionsReady}
+              onError={onDirectionsError}
+              precision="high"
+              timePrecision="now"
+              mode="DRIVING"
+            />
+          ) : userOrigin?.latitude && userOrigin?.longitude ? (
+            // Before trip: Show directions from origin to destination
+            <MapViewDirections
+              origin={userOrigin}
+              destination={userDestination}
+              apikey={GOOGLE_MAPS_APIKEY}
+              strokeWidth={4}
+              strokeColor="#2c3e50"
+              onReady={onDirectionsReady}
+              onError={onDirectionsError}
+              precision="high"
+              timePrecision="now"
+              optimizeWaypoints={true}
+              mode="DRIVING"
+            />
+          ) : null
         )}
       </MapView>
     </View>

@@ -1,23 +1,29 @@
 import React from "react";
-import { View, Text, ActivityIndicator, Image, StyleSheet, Dimensions } from "react-native";
+import { View, Text, ActivityIndicator, Image, StyleSheet, Dimensions, Pressable } from "react-native";
 
 const { width, height } = Dimensions.get("window");
 
-const LoadingState = ({ message = "Loading please wait...", slogan = "Nthome ka petjana!" }) => (
+const LoadingState = ({
+  message = "Loading please wait...",
+  slogan = "Nthome ka petjana!",
+  showButton = false,
+  buttonText = "Login",
+  onButtonPress = () => {},
+}) => (
   <View style={styles.loadingContainer}>
     <View style={styles.logoWrapper}>
-      <ActivityIndicator
-        size={100}
-        color="#0DCAF0"
-        style={styles.spinnerBehind}
-      />
-      <Image
-        source={require('../../assets/nthomeLogo.png')}
-        style={styles.logo}
-      />
+      { !showButton && <ActivityIndicator size={100} color="#0DCAF0" style={styles.spinnerBehind} /> }
+      <Image source={require('../../assets/nthomeLogo.png')} style={styles.logo} />
     </View>
+
     <Text style={styles.loadingText_slogan}>{slogan}</Text>
     <Text style={styles.loadingText}>{message}</Text>
+
+    {showButton && (
+      <Pressable style={styles.button} onPress={onButtonPress}>
+        <Text style={styles.buttonText}>{buttonText}</Text>
+      </Pressable>
+    )}
   </View>
 );
 
@@ -33,13 +39,13 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: 0,
     left: 0,
-    zIndex: 999, // ensures it overlays content
+    zIndex: 999,
   },
-
   loadingText: {
     marginTop: 16,
     fontSize: 16,
     color: "#4B5563",
+    textAlign: "center",
   },
   loadingText_slogan: {
     marginTop: 12,
@@ -68,5 +74,17 @@ const styles = StyleSheet.create({
     marginBottom: 25,
     justifyContent: "center",
     alignItems: "center",
+  },
+  button: {
+    marginTop: 20,
+    paddingVertical: 10,
+    paddingHorizontal: 25,
+    backgroundColor: "#0DCAF0",
+    borderRadius: 8,
+  },
+  buttonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "bold",
   },
 });

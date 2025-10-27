@@ -176,18 +176,18 @@ const CustomerProfile = ({ navigation }) => {
     current_address: "",
     gender: "",
   })
-// Add timeout to prevent infinite loading
-useEffect(() => {
-  const loadingTimer = setTimeout(() => {
-    if (loading) {
-      console.log('Loading timeout reached - forcing stop')
-      setLoading(false)
-      setError('Loading timeout - please check your connection')
-    }
-  }, 10000) // 10 second timeout
+  // Add timeout to prevent infinite loading
+  useEffect(() => {
+    const loadingTimer = setTimeout(() => {
+      if (loading) {
+        console.log('Loading timeout reached - forcing stop')
+        setLoading(false)
+        setError('Loading timeout - please check your connection')
+      }
+    }, 10000) // 10 second timeout
 
-  return () => clearTimeout(loadingTimer)
-}, [loading])
+    return () => clearTimeout(loadingTimer)
+  }, [loading])
 
   // Fetch user data from db
   useEffect(() => {
@@ -464,6 +464,20 @@ useEffect(() => {
       [field]: value,
     }))
   }, [])
+
+  if (!user || !user.user_id) {
+    return (
+      <LoadingState
+        message="Oops! Something went wrong. Please log in again."
+        showButton={true}
+        buttonText="Go back"
+        onButtonPress={() => {
+          // Logout user
+          navigation.replace("LogoutPage"); // Redirect to login screen
+        }}
+      />
+    );
+  }
 
   if (loading) {
     return <LoadingState />
