@@ -100,6 +100,11 @@ const DestinationScreen = ({ navigation, route }) => {
   const [tripMeta, setTripMeta] = useState({});
   const [showCancelAlert, setShowCancelAlert] = useState(false)
   const [startedTrip, setStartedTrip] = useState(false)
+  // Countdown timer state
+  const [countdown, setCountdown] = useState(null)
+  const [countdownSeconds, setCountdownSeconds] = useState(0)
+  const [lastDriverLocation, setLastDriverLocation] = useState(null)
+  const [arrivalTime, setArrivalTime] = useState(null)
 
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
     const R = 6371; // Earth radius in kilometers
@@ -116,7 +121,168 @@ const DestinationScreen = ({ navigation, route }) => {
     return distance;
   };
 
+  // Function to convert ETA string to seconds
+  const etaToSeconds = (etaString) => {
+    if (!etaString || etaString === "N/A") return 0;
 
+    try {
+      // Handle formats like "5 mins", "1 hour 5 mins", "15 min"
+      const hoursMatch = etaString.match(/(\d+)\s*hour/);
+      const minutesMatch = etaString.match(/(\d+)\s*min/);
+
+      let totalSeconds = 0;
+
+      if (hoursMatch) {
+        totalSeconds += parseInt(hoursMatch[1]) * 3600;
+      }
+
+      if (minutesMatch) {
+        totalSeconds += parseInt(minutesMatch[1]) * 60;
+      }
+
+      return totalSeconds;
+    } catch (error) {
+      console.error("Error converting ETA to seconds:", error);
+      return 0;
+    }
+  };
+  // Format countdown seconds to readable time
+  const formatCountdown = (seconds) => {
+    if (seconds <= 0) return "Arrived";
+
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const remainingSeconds = seconds % 60;
+
+    if (hours > 0) {
+      return `${hours}h ${minutes}m ${remainingSeconds}s`;
+    } else if (minutes > 0) {
+      return `${minutes}m ${remainingSeconds}s`;
+    } else {
+      return `${remainingSeconds}s`;
+    }
+  };
+
+
+  // Calculate estimated arrival time based on current ETA
+  const calculateArrivalTime = (etaSeconds) => {
+    if (!etaSeconds || etaSeconds <= 0) return null;
+    const arrival = new Date();
+    arrival.setSeconds(arrival.getSeconds() + etaSeconds);
+    return arrival;
+  };
+
+  // Recalculate remaining time based on current position and estimated arrival
+  const recalculateRemainingTime = () => {
+    if (!arrivalTime) return 0;
+
+    const now = new Date();
+    const remainingSeconds = Math.max(0, Math.floor((arrivalTime - now) / 1000));
+    return remainingSeconds;
+  };
+
+  
+  // Improved countdown timer that adjusts based on driver movement
+ useEffect(() => {
+    if (!eta || eta === "N/A" || !driverLocation) {
+      setCountdown(null);
+      setCountdownSeconds(0);
+      setArrivalTime(null);
+      return;
+    }
+
+    // Only reset the arrival time when ETA changes significantly or driver moves meaningfully
+    const totalSeconds = etaToSeconds(eta);
+
+    if (totalSeconds <= 0) {
+      setCountdown("Arrived");
+      setCountdownSeconds(0);
+      setArrivalTime(null);
+      return;
+    }
+
+    // Check if driver has moved significantly
+    const hasDriverMoved = lastDriverLocation && driverLocation
+      ? calculateDistance(
+        lastDriverLocation.latitude,
+        lastDriverLocation.longitude,
+        driverLocation.latitude,
+        driverLocation.longitude
+      ) > 50 // More than 50 meters movement
+      : true;
+
+    // Update arrival time if ETA changed significantly or driver moved meaningfully
+    if (!arrivalTime || Math.abs(totalSeconds - countdownSeconds) > 30 || hasDriverMoved) {
+      const newArrivalTime = calculateArrivalTime(totalSeconds);
+      setArrivalTime(newArrivalTime);
+      setCountdownSeconds(totalSeconds);
+      setCountdown(formatCountdown(totalSeconds));
+      setLastDriverLocation(driverLocation);
+    }
+
+    const timer = setInterval(() => {
+      if (arrivalTime) {
+        const remainingSeconds = recalculateRemainingTime();
+
+        if (remainingSeconds <= 0) {
+          clearInterval(timer);
+          setCountdown("Arrived");
+          setCountdownSeconds(0);
+          setArrivalTime(null);
+        } else {
+          setCountdownSeconds(remainingSeconds);
+          setCountdown(formatCountdown(remainingSeconds));
+        }
+      }
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [eta, driverLocation, arrivalTime]);
+
+  // Smart ETA adjustment based on driver progress
+  useEffect(() => {
+    if (!driverLocation || !lastDriverLocation || !userOrigin) return;
+
+    // Calculate if driver is getting closer to user origin
+    const currentDistance = calculateDistance(
+      userOrigin.latitude,
+      userOrigin.longitude,
+      driverLocation.latitude,
+      driverLocation.longitude
+    );
+
+    const previousDistance = calculateDistance(
+      userOrigin.latitude,
+      userOrigin.longitude,
+      lastDriverLocation.latitude,
+      lastDriverLocation.longitude
+    );
+
+    // If driver is getting closer faster than expected, adjust ETA
+    if (currentDistance < previousDistance && arrivalTime) {
+      const distanceImprovement = previousDistance - currentDistance;
+
+      // If driver covered more than 100 meters in the update interval, recalculate
+      if (distanceImprovement > 100) {
+        console.log("Driver making good progress, recalculating ETA...");
+        // This will trigger the parent useEffect to recalculate
+        setLastDriverLocation(driverLocation);
+      }
+    }
+  }, [driverLocation, userOrigin]);
+
+
+  // Reset countdown when ETA changes significantly
+  useEffect(() => {
+    if (eta && eta !== "N/A") {
+      const newSeconds = etaToSeconds(eta);
+      // Only reset if the difference is more than 30 seconds
+      if (Math.abs(newSeconds - countdownSeconds) > 30) {
+        setCountdownSeconds(newSeconds);
+        setCountdown(formatCountdown(newSeconds));
+      }
+    }
+  }, [eta]);
 
   const handleCancelTrip = () => {
     setCancelModalVisible(true) // Show cancellation modal
@@ -214,6 +380,9 @@ const DestinationScreen = ({ navigation, route }) => {
       console.log("✅ Trip arrived:", data)
       // alert(`Your driver has arrived! Trip ID: ${data.tripId}`);
       setTripStatus("arrived")
+      setCountdown("Arrived")
+      setCountdownSeconds(0)
+      setArrivalTime(null)
     })
 
 
@@ -256,6 +425,9 @@ const DestinationScreen = ({ navigation, route }) => {
 
       showToast("success", "Trip Ended", "Your trip has ended!");
       setTripStatus("ended");
+      setCountdown(null);
+      setCountdownSeconds(0);
+      setArrivalTime(null);
       dispatch({
         type: 'SET_TRIP_DATA',
         payload: { status: 'completed' }
@@ -272,11 +444,14 @@ const DestinationScreen = ({ navigation, route }) => {
 
 
 
-    // Listen for when the trip is declined
+    // Listen for when the trip is canceled/declined
     listenToTripDeclined((data) => {
-      console.log("❌ Trip declined:", data)
-      showToast("error", "Trip Declined", "Your trip has been declined!");
-      setTripStatus("declined")
+      console.log("❌ Trip canceled:", data)
+      showToast("error", "Trip canceled", "Your trip has been canceled!");
+      setTripStatus("canceled")
+      setCountdown(null);
+      setCountdownSeconds(0);
+      setArrivalTime(null);
       dispatch({
         type: 'SET_TRIP_DATA',
         payload: { status: 'canceled' }
@@ -315,9 +490,9 @@ const DestinationScreen = ({ navigation, route }) => {
       if (tripData.status === "on-going") {
         const newDestination = tripData?.dropOffCoordinates?.latitude && tripData?.dropOffCoordinates?.longitude
           ? {
-              latitude: tripData.dropOffCoordinates.latitude,
-              longitude: tripData.dropOffCoordinates.longitude,
-            }
+            latitude: tripData.dropOffCoordinates.latitude,
+            longitude: tripData.dropOffCoordinates.longitude,
+          }
           : userDestination
 
         if (newDestination && !userDestination) {
@@ -345,6 +520,9 @@ const DestinationScreen = ({ navigation, route }) => {
 
           if (latestTripStatus === "canceled") {
             setDriverLocation({ latitude: null, longitude: null });
+            setCountdown(null);
+            setCountdownSeconds(0);
+            setArrivalTime(null);
           }
         }
       } catch (error) {
@@ -527,6 +705,9 @@ const DestinationScreen = ({ navigation, route }) => {
     if (distanceMeters <= 50 && !hasAlerted.arrived) {
       showToast("success", "Driver Arrived", "Your driver has arrived!");
       setHasAlerted((prev) => ({ ...prev, arrived: true }));
+      setCountdown("Arrived");
+      setCountdownSeconds(0);
+      setArrivalTime(null);
     } else if (distanceMeters <= 250 && !hasAlerted.close) {
       showToast("info", "Driver Close", "Your driver is almost there (250 m).");
       setHasAlerted((prev) => ({ ...prev, close: true }));
@@ -622,9 +803,9 @@ const DestinationScreen = ({ navigation, route }) => {
   }
 
   // FIXED: Determine when to show directions
-  const shouldShowDirections = tripStatusAccepted === "on-going" && 
-                              userOrigin?.latitude && 
-                              userDestination?.latitude
+  const shouldShowDirections = tripStatusAccepted === "on-going" &&
+    userOrigin?.latitude &&
+    userDestination?.latitude
   if (authorizationUrl) {
     return (
       <WebView
@@ -673,16 +854,31 @@ const DestinationScreen = ({ navigation, route }) => {
 
               {/* Right button OR placeholder */}
               <View style={styles.iconWrapper}>
-                {!(tripStatus === "started" || route.params?.paymentStatus === "success") && (
+                {/* {!(tripStatus === "started" || route.params?.paymentStatus === "success") && ( */}
                   <TouchableOpacity
                     style={styles.cancelButtonContainer}
                     onPress={handleCancelTrip}
                   >
                     <Icon name="cancel" color="#0DCAF0" size={30} />
                   </TouchableOpacity>
-                )}
+                {/* )} */}
               </View>
             </View>
+
+            {/* Countdown Timer Display */}
+            {countdown && tripStatusAccepted === "accepted" && (
+              <View style={styles.countdownContainer}>
+                <View style={styles.countdownContent}>
+                  <Icon name="timer" type="material" size={20} color="#0DCAF0" />
+                  <Text style={styles.countdownLabel}>Driver arriving in:</Text>
+                  <Text style={styles.countdownTimer}>{countdown}</Text>
+                </View>
+                {distance && (
+                  <Text style={styles.distanceText}>{distance} away</Text>
+                )}
+                <Text style={styles.etaUpdateText}>Updates based on driver's location</Text>
+              </View>
+            )}
           </View>
           {/* Cancel Trip Icon positioned below the call button */}
           <TouchableOpacity style={styles.rectangleButton} onPress={handleNavigation}>
@@ -691,7 +887,7 @@ const DestinationScreen = ({ navigation, route }) => {
 
           {/* Trip Cancellation Modal */}
           <TripCancelationModal isVisible={cancelModalVisible} onClose={handleCloseModal} onCancel={handleCancel} />
-       {tripData?.driver_id && (
+          {tripData?.driver_id && (
             <MapComponent
               driverLocation={driverLocation}
               tripStarted={startedTrip}
@@ -829,6 +1025,54 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 16,
     fontWeight: "600",
+  },
+  // Countdown Timer Styles
+  countdownContainer: {
+    backgroundColor: "#F8FBFD",
+    padding: 15,
+    marginHorizontal: 15,
+    marginBottom: 10,
+    borderRadius: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: "#0DCAF0",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  countdownContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 5,
+  },
+  countdownLabel: {
+    fontSize: 14,
+    color: "#64748B",
+    marginLeft: 8,
+    marginRight: 12,
+    fontWeight: "500",
+  },
+  countdownTimer: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#0F172A",
+    backgroundColor: "#E6F7FF",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  distanceText: {
+    fontSize: 12,
+    color: "#94A3B8",
+    textAlign: "center",
+    fontStyle: "italic",
+  },
+  etaUpdateText: {
+    fontSize: 10,
+    color: "#64748B",
+    textAlign: "center",
+    fontStyle: "italic",
   },
 })
 

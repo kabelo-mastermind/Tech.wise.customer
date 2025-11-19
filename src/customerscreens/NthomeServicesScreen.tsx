@@ -112,9 +112,8 @@ const NthomeServicesScreen = ({ navigation }) => {
   }
 
   const handleFoodPress = () => {
-    Alert.alert("Coming Soon", "NthomeFood service will be available soon!", [
-      { text: "OK", onPress: () => console.log("OK Pressed") },
-    ])
+     navigation.navigate("FoodWelcomeScreen")
+
   }
 
   const handleShopPress = () => {
@@ -204,7 +203,7 @@ const NthomeServicesScreen = ({ navigation }) => {
             <ServiceCard
               title="NthomeFood"
               description="Delicious meals, delivered to your doorstep in minutes."
-              isComingSoon={true}
+              isComingSoon={false}
               onPress={handleFoodPress}
               index={2}
             />

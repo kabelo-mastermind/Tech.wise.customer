@@ -34,7 +34,7 @@ export default function App() {
                 <OriginContextProvider>
                   <RootNavigator />
                   {/* ✅ Add Toast here */}
-                  <Toast config={toastConfig} /> 
+                  <Toast config={toastConfig} />
                   {/* if you don’t want custom config, just use <Toast /> */}
                 </OriginContextProvider>
               </DestinationContextProvider>

@@ -1,7 +1,7 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { View, Text, TouchableOpacity, Image, StyleSheet, FlatList, Alert, Dimensions, StatusBar } from "react-native"
+import { useCallback, useEffect, useState } from "react"
+import { View, Text, TouchableOpacity, Image, StyleSheet, FlatList, Alert, Dimensions, StatusBar, ActivityIndicator } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { Icon } from "react-native-elements"
 import { LinearGradient } from "expo-linear-gradient"
@@ -9,6 +9,8 @@ import { useDispatch, useSelector } from "react-redux"
 import axios from "axios"
 import { api } from "../../api"
 import { setCard } from "../redux/actions/cardsAction"
+import WebView from "react-native-webview"
+import CustomDrawer from "../components/CustomDrawer"
 
 const { width } = Dimensions.get("window")
 
@@ -18,75 +20,88 @@ const PaymentMethodsScreen = ({ navigation }) => {
   const [cardsDetails, setCardsDetails] = useState([])
   const [selectedCardId, setSelectedCardId] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [showPaystackWebView, setShowPaystackWebView] = useState(false)
+  const [authorizationUrl, setAuthorizationUrl] = useState("")
+  const [updatingCardId, setUpdatingCardId] = useState(null)
 
   const mastercardIcon = require("../../assets/mastercard.png")
   const visaIcon = require("../../assets/visa-credit-card.png")
   const dispatch = useDispatch()
+
   // Fetch user cards from backend
   useEffect(() => {
     if (!user_id) return
-    const fetchCustomerCards = async () => {
-      setIsLoading(true)
-      try {
-        const res = await axios.get(api + `customer-cards/${user_id}`)
-        console.log("Customer Cards--------------:", res.data)
-
-        const cards = res.data
-        setCardsDetails(cards)
-
-        // Set the selected card if any is marked as selected
-        const selected = cards.find((card) => card.is_selected === 1)
-
-        // If there's only one card and it's not selected, automatically select it
-        if (cards.length === 1 && !selected) {
-          const singleCard = cards[0]
-          setSelectedCardId(singleCard.id)
-
-          // Update the card in the database
-          try {
-            await axios.put(`${api}customer-card/select`, {
-              user_id,
-              selected_card_id: singleCard.id,
-            })
-
-            // Update local state to reflect the selection
-            setCardsDetails([
-              {
-                ...singleCard,
-                is_selected: 1,
-              },
-            ])
-
-            // Update Redux store
-            dispatch(
-              setCard({
-                cardsDetails: [
-                  {
-                    ...singleCard,
-                    is_selected: 1,
-                  },
-                ],
-              }),
-            )
-          } catch (error) {
-            console.error("Error auto-selecting single card:", error)
-            // Still set it as selected in the UI even if the API call fails
-            setSelectedCardId(singleCard.id)
-          }
-        } else {
-          // Normal case - set selected card from API response
-          setSelectedCardId(selected ? selected.id : cards[0]?.id || null)
-        }
-      } catch (err) {
-        console.error("Error fetching customer Cards:", err)
-        setCardsDetails([])
-        setSelectedCardId(null)
-      } finally {
-        setIsLoading(false)
-      }
-    }
     fetchCustomerCards()
   }, [user_id])
+
+  const fetchCustomerCards = async () => {
+    setIsLoading(true)
+    try {
+      const res = await axios.get(api + `customer-cards/${user_id}`)
+      console.log("Customer Cards--------------:", res.data)
+
+      const cards = res.data
+      setCardsDetails(cards)
+
+      // Find the currently selected card
+      const selectedCard = cards.find((card) => card.is_selected === 1 || card.is_default === 1)
+      setSelectedCardId(selectedCard ? selectedCard.id : cards[0]?.id || null)
+
+    } catch (err) {
+      console.error("Error fetching customer Cards:", err)
+      setCardsDetails([])
+      setSelectedCardId(null)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  // Initialize Paystack transaction and get authorization URL
+  const initializePaystackTransaction = async () => {
+    try {
+      setIsLoading(true);
+
+      const response = await axios.post(`${api}initialize-card-registration`, {
+        user_id,
+        email: user?.email,
+      });
+
+      const authorization_url = response.data?.data?.authorization_url;
+
+      if (authorization_url) {
+        setAuthorizationUrl(authorization_url);
+        setShowPaystackWebView(true);
+      } else {
+        Alert.alert("Error", "Failed to initialize card registration.");
+      }
+    } catch (error) {
+      console.error(error);
+      Alert.alert("Error", "Failed to initialize card registration.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSuccessfulTransaction = async (reference) => {
+    try {
+      const verificationResponse = await axios.get(`${api}verify-card-registration/${reference}`);
+
+      if (verificationResponse.data.status === "success") {
+        await fetchCustomerCards(); // refresh cards list
+
+        navigation.navigate("AddPaymentMethodScreen", {
+          success: true,
+          message: "Card added successfully!",
+          reference,
+        });
+      } else {
+        Alert.alert("Failed", "Transaction verification failed. Please try again.");
+      }
+    } catch (error) {
+      console.error("Error verifying transaction:", error);
+      Alert.alert("Error", "Failed to verify transaction. Please try again.");
+    }
+  };
 
   const handleDeleteCard = (cardId) => {
     Alert.alert(
@@ -103,9 +118,15 @@ const PaymentMethodsScreen = ({ navigation }) => {
               const updatedCards = cardsDetails.filter((card) => card.id !== cardId)
               setCardsDetails(updatedCards)
 
-              // Reset selected card if deleted
+              // If we're deleting the selected card, select another one
               if (selectedCardId === cardId) {
-                setSelectedCardId(updatedCards[0]?.id || null)
+                const newSelectedCard = updatedCards[0]?.id || null
+                setSelectedCardId(newSelectedCard)
+                
+                // If there are other cards, set the first one as primary
+                if (newSelectedCard) {
+                  await handleCardSelect(newSelectedCard)
+                }
               }
             } catch (err) {
               console.error("Failed to delete card:", err)
@@ -123,38 +144,40 @@ const PaymentMethodsScreen = ({ navigation }) => {
   const handleCardSelect = async (cardId) => {
     if (selectedCardId === cardId) return
 
-    setIsLoading(true)
+    setUpdatingCardId(cardId)
     try {
-      // Send update to backend to set selected card
-      await axios.put(`${api}customer-card/select`, {
-        user_id,
-        selected_card_id: cardId,
-      })
+      // Use the new endpoint to set primary card
+      const response = await axios.put(`${api}user/${user_id}/card/${cardId}/set-primary`)
 
-      setSelectedCardId(cardId)
-      dispatch(
-        setCard({
-          cardsDetails,
-        }),
-      ) // Store user details in Redux
-      setCardsDetails(
-        cardsDetails.map((card) => ({
+      if (response.status === 200) {
+        setSelectedCardId(cardId)
+        
+        // Update local state to reflect the changes
+        const updatedCards = cardsDetails.map((card) => ({
           ...card,
           is_selected: card.id === cardId ? 1 : 0,
-        })),
-      )
+          is_default: card.id === cardId ? 1 : 0,
+        }))
+        
+        setCardsDetails(updatedCards)
+        
+        // Update Redux store
+        dispatch(setCard({ cardsDetails: updatedCards }))
+
+        console.log("Primary card updated successfully:", cardId)
+      }
     } catch (error) {
       console.error("Error selecting card:", error)
       Alert.alert("Error", "Failed to set primary card. Please try again.")
     } finally {
-      setIsLoading(false)
+      setUpdatingCardId(null)
     }
   }
 
-  // Fix the card type check in the renderCardItem function
+  // Render card item with loading state
   const renderCardItem = ({ item }) => {
     const isSelected = item.id === selectedCardId
-    // Fix the card type check to be case-insensitive
+    const isUpdating = updatingCardId === item.id
     const cardLogo = item.card_type?.toLowerCase() === "visa" ? visaIcon : mastercardIcon
 
     return (
@@ -162,87 +185,158 @@ const PaymentMethodsScreen = ({ navigation }) => {
         <TouchableOpacity
           style={[styles.cardItem, isSelected && styles.selectedCardItem]}
           onPress={() => handleCardSelect(item.id)}
-          disabled={isLoading}
+          disabled={isLoading || isUpdating}
         >
           <View style={styles.cardItemContent}>
             <Image source={cardLogo} style={styles.cardLogo} />
             <View style={styles.cardDetails}>
               <Text style={styles.cardType}>{item.bank_code}</Text>
               <Text style={styles.cardNumberText}>•••• •••• •••• {item.last_four_digits}</Text>
+              {(item.is_default === 1 || item.is_selected === 1) && (
+                <View style={styles.primaryBadge}>
+                  <Text style={styles.primaryBadgeText}>Primary</Text>
+                </View>
+              )}
             </View>
           </View>
-          <View style={[styles.checkCircle, isSelected && styles.selectedCheckCircle]}>
-            {isSelected && <Icon name="check" type="material" size={16} color="#FFFFFF" />}
+          <View style={styles.selectionContainer}>
+            {isUpdating ? (
+              <ActivityIndicator size="small" color="#0DCAF0" />
+            ) : (
+              <View style={[styles.checkCircle, isSelected && styles.selectedCheckCircle]}>
+                {isSelected && <Icon name="check" type="material" size={16} color="#FFFFFF" />}
+              </View>
+            )}
           </View>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.deleteButton} onPress={() => handleDeleteCard(item.id)} disabled={isLoading}>
-          <Icon name="delete-outline" type="material" size={24} color="#FF3B30" />
+        <TouchableOpacity 
+          style={[styles.deleteButton, (isLoading || isUpdating) && styles.deleteButtonDisabled]} 
+          onPress={() => handleDeleteCard(item.id)} 
+          disabled={isLoading || isUpdating}
+        >
+          {isLoading ? (
+            <ActivityIndicator size="small" color="#FF3B30" />
+          ) : (
+            <Icon name="delete-outline" type="material" size={24} color="#FF3B30" />
+          )}
         </TouchableOpacity>
       </View>
     )
   }
 
   const selectedPrimaryCard = cardsDetails.find((card) => card.id === selectedCardId)
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const toggleDrawer = useCallback(() => setDrawerOpen((prev) => !prev), [])
+
+  // WebView component for Paystack
+  if (showPaystackWebView) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar barStyle="dark-content" backgroundColor="#F8FBFD" />
+        {/* Header */}
+        <View style={styles.webViewHeader}>
+          <TouchableOpacity onPress={() => setShowPaystackWebView(false)} style={styles.backButton}>
+            <Icon name="arrow-back" type="material" size={24} color="#0F172A" />
+          </TouchableOpacity>
+          <Text style={styles.webViewHeaderTitle}>Add Card with Paystack</Text>
+          <View style={{ width: 40 }} />
+        </View>
+        <WebView
+          source={{ uri: authorizationUrl }}
+          style={styles.webView}
+          startInLoadingState={true}
+          javaScriptEnabled={true}
+          domStorageEnabled={true}
+          onNavigationStateChange={(navState) => {
+            const { url } = navState;
+            console.log("WebView URL:", url);
+
+            if (url.startsWith("nthome://AddPaymentMethodScreen")) {
+              const params = new URL(url).searchParams;
+              const reference = params.get("reference");
+
+              if (reference) handleSuccessfulTransaction(reference);
+
+              setShowPaystackWebView(false);
+              setAuthorizationUrl("");
+            }
+          }}
+        />
+      </SafeAreaView>
+    )
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" backgroundColor="#F8FBFD" />
       <View style={styles.container}>
+        {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-            <Icon name="arrow-back" type="material" size={24} color="#0F172A" />
+          <TouchableOpacity onPress={toggleDrawer} style={styles.menuButton}>
+            <Icon type="material-community" name="menu" color="#0DCAF0" size={28} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Payment Methods</Text>
-          <View style={{ width: 40 }} />
+          <View style={styles.headerSpacer} />
         </View>
 
-        {/* Primary Card */}
-        {selectedPrimaryCard ? (
-          <View style={styles.primaryCardContainer}>
-            <LinearGradient
-              colors={["#0DCAF0", "#0AA8CD"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.primaryCard}
-            >
-              <View style={styles.cardChip}>
-                <Icon name="credit-card-chip" type="material-community" size={30} color="#FFD700" />
-              </View>
-              <View style={styles.cardHeader}>
-                <View>
-                  <Text style={styles.cardLabel}>{selectedPrimaryCard.bank_code}</Text>
-                  <Text style={styles.cardNumber}>•••• •••• •••• {selectedPrimaryCard.last_four_digits}</Text>
+        {/* Primary Card Section */}
+        <View style={styles.primaryCardSection}>
+          <Text style={styles.sectionLabel}>Primary Card</Text>
+          {selectedPrimaryCard ? (
+            <View style={styles.primaryCardContainer}>
+              <LinearGradient
+                colors={["#0DCAF0", "#0AA8CD"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.primaryCard}
+              >
+                <View style={styles.cardChip}>
+                  <Icon name="credit-card-chip" type="material-community" size={32} color="#FFD700" />
                 </View>
-                <Image
-                  source={selectedPrimaryCard.card_type?.toLowerCase() === "visa" ? visaIcon : mastercardIcon}
-                  style={styles.cardBrandLogo}
-                />
-              </View>
-              <View style={styles.cardFooter}>
-                <View>
-                  <Text style={styles.cardHolderLabel}>CARD HOLDER</Text>
-                  <Text style={styles.cardHolderName}>{user?.name}</Text>
+                <View style={styles.cardHeader}>
+                  <View>
+                    <Text style={styles.cardLabel}>{selectedPrimaryCard.bank_code}</Text>
+                    <Text style={styles.cardNumber}>•••• •••• •••• {selectedPrimaryCard.last_four_digits}</Text>
+                  </View>
+                  <Image
+                    source={selectedPrimaryCard.card_type?.toLowerCase() === "visa" ? visaIcon : mastercardIcon}
+                    style={styles.cardBrandLogo}
+                  />
                 </View>
-              </View>
-            </LinearGradient>
-          </View>
-        ) : (
-          <View style={styles.noCardContainer}>
-            <Icon name="credit-card-off" type="material-community" size={60} color="#CBD5E1" />
-            <Text style={styles.noCardText}>No primary card selected</Text>
-            <Text style={styles.noCardSubtext}>Add a card to manage your payments</Text>
-          </View>
-        )}
+                <View style={styles.cardFooter}>
+                  <View>
+                    <Text style={styles.cardHolderLabel}>CARD HOLDER</Text>
+                    <Text style={styles.cardHolderName}>{user?.name}</Text>
+                  </View>
+                  <View style={styles.primaryIndicator}>
+                    <Icon name="star" type="material" size={16} color="#FFD700" />
+                    <Text style={styles.primaryIndicatorText}>Primary</Text>
+                  </View>
+                </View>
+              </LinearGradient>
+            </View>
+          ) : (
+            <View style={styles.noCardContainer}>
+              <Icon name="credit-card-off" type="material-community" size={64} color="#CBD5E1" />
+              <Text style={styles.noCardText}>No primary card selected</Text>
+              <Text style={styles.noCardSubtext}>Add a card to manage your payments</Text>
+            </View>
+          )}
+        </View>
 
         {/* Available Cards List */}
-        <View style={styles.cardsListContainer}>
-          <Text style={styles.sectionTitle}>Your Payment Cards</Text>
+        <View style={styles.cardsListSection}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Your Payment Cards</Text>
+            <Text style={styles.cardCount}>{cardsDetails.length} cards</Text>
+          </View>
+          
           {cardsDetails.length === 0 ? (
             <View style={styles.emptyStateContainer}>
-              <Icon name="credit-card-off" type="material-community" size={50} color="#CBD5E1" />
+              <Icon name="credit-card-multiple" type="material-community" size={56} color="#CBD5E1" />
               <Text style={styles.emptyStateText}>No payment cards found</Text>
-              <Text style={styles.emptyStateSubtext}>Add a card to get started</Text>
+              <Text style={styles.emptyStateSubtext}>Add your first card to get started</Text>
             </View>
           ) : (
             <FlatList
@@ -251,20 +345,30 @@ const PaymentMethodsScreen = ({ navigation }) => {
               renderItem={renderCardItem}
               style={styles.cardList}
               showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.cardListContent}
             />
           )}
         </View>
 
         {/* Add New Card Button */}
-        {/* <TouchableOpacity
-          style={styles.addCardButton}
-          onPress={() => navigation.navigate("AddPaymentMethodScreen")}
-          disabled={isLoading}
-        >
-          <Icon name="add-circle-outline" type="material" size={20} color="#FFFFFF" />
-          <Text style={styles.addCardButtonText}>Add New Card</Text>
-        </TouchableOpacity> */}
+        <View style={styles.footer}>
+          <TouchableOpacity
+            style={[styles.addCardButton, isLoading && styles.addCardButtonDisabled]}
+            onPress={initializePaystackTransaction}
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Icon name="add" type="material" size={22} color="#FFFFFF" />
+            )}
+            <Text style={styles.addCardButtonText}>
+              {isLoading ? "Processing..." : "Add New Card with Paystack"}
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
+      {drawerOpen && <CustomDrawer isOpen={drawerOpen} toggleDrawer={toggleDrawer} navigation={navigation} />}
     </SafeAreaView>
   )
 }
@@ -276,39 +380,61 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    padding: 20,
+    paddingHorizontal: 24,
+    paddingTop: 16,
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 24,
+    marginBottom: 32,
+    paddingTop: 8,
   },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#F1F5F9",
-    alignItems: "center",
+  menuButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#FFFFFF",
     justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
   },
   headerTitle: {
     fontSize: 20,
     fontWeight: "700",
     color: "#0F172A",
+    letterSpacing: -0.5,
+  },
+  headerSpacer: {
+    width: 44,
+  },
+  primaryCardSection: {
+    marginBottom: 32,
+  },
+  sectionLabel: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#64748B",
+    marginBottom: 12,
+    letterSpacing: -0.2,
   },
   primaryCardContainer: {
-    marginBottom: 24,
+    shadowColor: "#0DCAF0",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 6,
   },
   primaryCard: {
     padding: 24,
-    borderRadius: 16,
-    shadowColor: "#0DCAF0",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
+    borderRadius: 20,
+    minHeight: 200,
     position: "relative",
+    overflow: "hidden",
   },
   cardChip: {
     position: "absolute",
@@ -319,24 +445,26 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    marginTop: 40,
-    marginBottom: 40,
+    marginTop: 52,
+    marginBottom: 44,
   },
   cardLabel: {
     color: "#FFFFFF",
     fontSize: 14,
-    opacity: 0.8,
-    marginBottom: 4,
+    opacity: 0.9,
+    marginBottom: 6,
+    fontWeight: "500",
+    letterSpacing: 0.5,
   },
   cardNumber: {
     color: "#FFFFFF",
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: "600",
-    letterSpacing: 2,
+    letterSpacing: 2.5,
   },
   cardBrandLogo: {
-    width: 50,
-    height: 30,
+    width: 56,
+    height: 34,
     resizeMode: "contain",
   },
   cardFooter: {
@@ -346,39 +474,46 @@ const styles = StyleSheet.create({
   },
   cardHolderLabel: {
     color: "#FFFFFF",
-    fontSize: 10,
+    fontSize: 11,
     opacity: 0.8,
     marginBottom: 4,
+    fontWeight: "500",
+    letterSpacing: 1,
   },
   cardHolderName: {
     color: "#FFFFFF",
     fontSize: 16,
-    fontWeight: "500",
+    fontWeight: "600",
+    letterSpacing: 0.5,
   },
-  expiryLabel: {
-    color: "#FFFFFF",
-    fontSize: 10,
-    opacity: 0.8,
-    marginBottom: 4,
-    textAlign: "right",
+  primaryIndicator: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
   },
-  expiryValue: {
+  primaryIndicatorText: {
     color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "500",
+    fontSize: 12,
+    fontWeight: "600",
+    marginLeft: 4,
   },
   noCardContainer: {
     backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: 24,
+    borderRadius: 20,
+    padding: 32,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 24,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 3,
+    borderWidth: 1.5,
+    borderColor: "#F1F5F9",
+    borderStyle: "dashed",
   },
   noCardText: {
     fontSize: 18,
@@ -386,47 +521,71 @@ const styles = StyleSheet.create({
     color: "#0F172A",
     marginTop: 16,
     marginBottom: 8,
+    textAlign: "center",
   },
   noCardSubtext: {
     fontSize: 14,
     color: "#64748B",
     textAlign: "center",
+    lineHeight: 20,
   },
-  cardsListContainer: {
+  cardsListSection: {
     flex: 1,
+  },
+  sectionHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: "600",
+    fontWeight: "700",
     color: "#0F172A",
-    marginBottom: 16,
+    letterSpacing: -0.3,
+  },
+  cardCount: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#64748B",
+    backgroundColor: "#F1F5F9",
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
   },
   emptyStateContainer: {
     alignItems: "center",
     justifyContent: "center",
-    padding: 24,
+    padding: 48,
     backgroundColor: "#FFFFFF",
-    borderRadius: 16,
+    borderRadius: 20,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.04,
     shadowRadius: 8,
     elevation: 2,
+    borderWidth: 1.5,
+    borderColor: "#F1F5F9",
   },
   emptyStateText: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: "600",
     color: "#0F172A",
-    marginTop: 12,
-    marginBottom: 4,
+    marginTop: 16,
+    marginBottom: 8,
+    textAlign: "center",
   },
   emptyStateSubtext: {
     fontSize: 14,
     color: "#64748B",
     textAlign: "center",
+    lineHeight: 20,
   },
   cardList: {
     flex: 1,
+  },
+  cardListContent: {
+    paddingBottom: 8,
   },
   cardItemContainer: {
     flexDirection: "row",
@@ -439,91 +598,159 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     backgroundColor: "#FFFFFF",
-    padding: 16,
-    borderRadius: 12,
+    padding: 20,
+    borderRadius: 16,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
     elevation: 1,
+    borderWidth: 1.5,
+    borderColor: "#F8FAFC",
+    minHeight: 80,
   },
   selectedCardItem: {
-    borderWidth: 2,
     borderColor: "#0DCAF0",
     shadowColor: "#0DCAF0",
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
   },
   cardItemContent: {
     flexDirection: "row",
     alignItems: "center",
+    flex: 1,
   },
   cardLogo: {
-    width: 40,
-    height: 25,
+    width: 44,
+    height: 28,
     resizeMode: "contain",
-    marginRight: 12,
+    marginRight: 16,
   },
   cardDetails: {
     flex: 1,
   },
   cardType: {
     fontSize: 16,
-    fontWeight: "500",
+    fontWeight: "600",
     color: "#0F172A",
     marginBottom: 4,
+    letterSpacing: -0.3,
   },
   cardNumberText: {
     fontSize: 14,
     color: "#64748B",
-    marginBottom: 2,
+    letterSpacing: 0.5,
   },
-  expiryText: {
-    fontSize: 12,
-    color: "#94A3B8",
+  primaryBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#0DCAF0',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginTop: 4,
+  },
+  primaryBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  selectionContainer: {
+    width: 28,
+    height: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   checkCircle: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     borderWidth: 2,
-    borderColor: "#CBD5E1",
+    borderColor: "#E2E8F0",
     alignItems: "center",
     justifyContent: "center",
+    backgroundColor: "#FFFFFF",
   },
   selectedCheckCircle: {
     backgroundColor: "#0DCAF0",
     borderColor: "#0DCAF0",
   },
   deleteButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#FEE2E2",
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#FEF2F2",
     alignItems: "center",
     justifyContent: "center",
     marginLeft: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  deleteButtonDisabled: {
+    opacity: 0.5,
+  },
+  footer: {
+    paddingTop: 16,
+    paddingBottom: 24,
   },
   addCardButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#0DCAF0",
-    paddingVertical: 16,
-    borderRadius: 12,
-    marginTop: 16,
+    paddingVertical: 18,
+    borderRadius: 16,
     shadowColor: "#0DCAF0",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 5,
+  },
+  addCardButtonDisabled: {
+    opacity: 0.7,
   },
   addCardButtonText: {
     color: "#FFFFFF",
     fontSize: 16,
     fontWeight: "600",
     marginLeft: 8,
+    letterSpacing: -0.2,
+  },
+  webViewHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: "#F8FBFD",
+    borderBottomWidth: 1,
+    borderBottomColor: "#E2E8F0",
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#F1F5F9",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  webViewHeaderTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#0F172A",
+    letterSpacing: -0.3,
+  },
+  webView: {
+    flex: 1,
   },
 })
 

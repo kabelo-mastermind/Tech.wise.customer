@@ -41,14 +41,24 @@ import TripCancellationModal from "../components/TripCancelationModal";
 import CustomerChat from "../customerscreens/CustomerChat";
 import PaymentSuccess from "../components/payment-success";
 import RideRatingScreen from "../customerscreens/RideRatingScreen";
+import ForgotPasswordScreen from "../WelcomeScreens/ForgotPasswordScreen";
+import TermsScreen from "../customerscreens/TermsScreen";
+import { ActivityIndicator, View } from "react-native";
+
 import BookingForm from "../NthomeAir/BookingForm";
 import BookingList from "../NthomeAir/BookingList";
 import BookingEdit from "../NthomeAir/BookingEdit";
 import BookingDetails from "../NthomeAir/BookingDetails";
 import FlightWelcomeScreen from "../NthomeAir/FlightWelcomeScreen";
-import TermsScreen from "../customerscreens/TermsScreen";
-import ForgotPasswordScreen from "../WelcomeScreens/ForgotPasswordScreen";
-import { ActivityIndicator, View } from "react-native";
+
+
+import FoodWelcomeScreen from "../NthomeFood/FoodWelcomeScreen";
+import NthomeFoodLanding from "../NthomeFood/NthomeFoodLanding";
+import SeeAllRestaurantsScreen from "../NthomeFood/SeeAllRestaurantsScreen";
+import RestaurantDetailScreen from "../NthomeFood/RestaurantDetailScreen";
+import CartScreen from "../NthomeFood/CartScreen";
+
+
 const Stack = createNativeStackNavigator();
 const Drawer = createDrawerNavigator();
 const Tab = createBottomTabNavigator();
@@ -319,7 +329,7 @@ export default function RootNavigator() {
   }, []);
 
 
-   if (isLoading || initialRoute === null) {
+  if (isLoading || initialRoute === null) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
         <ActivityIndicator size="large" color="#0DCAF0" />
@@ -327,8 +337,20 @@ export default function RootNavigator() {
     );
   }
 
+  const linking = {
+    prefixes: ['nthome://'],
+    config: {
+      screens: {
+        PaymentSuccess_add_cards: 'AddPaymentMethodScreen',
+        PaymentSuccessScreen_trip_pay: 'PaymentSuccess',
+      },
+    },
+  };
+
+
   return (
     <NavigationContainer
+      linking={linking}
       onStateChange={async (state) => {
         const currentRouteName = getActiveRouteName(state);
 
@@ -375,6 +397,11 @@ export default function RootNavigator() {
         <Stack.Screen name="BookingEdit" component={BookingEdit} options={{ headerShown: false }} />
         <Stack.Screen name="FlightWelcomeScreen" component={FlightWelcomeScreen} options={{ headerShown: false }} />
         <Stack.Screen name="TermsScreen" component={TermsScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="FoodWelcomeScreen" component={FoodWelcomeScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="NthomeFoodLanding" component={NthomeFoodLanding} options={{ headerShown: false }} />
+        <Stack.Screen name="SeeAllRestaurants" component={SeeAllRestaurantsScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="RestaurantDetail" component={RestaurantDetailScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="Cart" component={CartScreen} options={{ headerShown: false }} />
 
 
 

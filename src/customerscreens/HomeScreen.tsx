@@ -3,8 +3,6 @@ import { useState, useEffect, useRef } from "react"
 import {
   View,
   Text,
-  TextInput,
-  StyleSheet,
   TouchableOpacity,
   FlatList,
   ScrollView,
@@ -12,33 +10,30 @@ import {
   Dimensions,
   ActivityIndicator,
   Platform,
-  SafeAreaView, // Added SafeAreaView for top content
+  SafeAreaView,
+  StyleSheet,
 } from "react-native"
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons"
-import MapView, { PROVIDER_GOOGLE, Marker } from "react-native-maps"
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Location from 'expo-location';
 import CustomDrawer from "../components/CustomDrawer"
 import { useSelector } from "react-redux"
 
-// Get screen dimensions for responsive design
-const { width, height } = Dimensions.get("window") // Added height for header sizing
+const { width, height } = Dimensions.get("window")
 
-// Constants for card sizing
+// Constants
 const POPULAR_CARD_WIDTH = width * 0.42
-const POPULAR_CARD_SPACING = 12 // Spacing between popular cards
+const POPULAR_CARD_SPACING = 12
 const OFFER_CARD_WIDTH = width * 0.75
-const OFFER_CARD_SPACING = 15 // Spacing between offer cards
-const RECENT_SEARCH_SPACING = 10 // Spacing between recent search tags
+const OFFER_CARD_SPACING = 15
+const RECENT_SEARCH_SPACING = 10
+const SERVICE_CARD_WIDTH = width * 0.7
+const SERVICE_CARD_SPACING = 15
 
-// New constants for service cards
-const SERVICE_CARD_WIDTH = width * 0.7 // Example: 70% of screen width
-const SERVICE_CARD_SPACING = 15 // Spacing between service cards
+// Images
+const HEADER_RIGHT_IMAGE = require("../../assets/nthomeAir_images/homeScreen.png")
 
-// Placeholder images for the new header
-const HEADER_RIGHT_IMAGE = require("../../assets/nthomeAir_images/homeScreen.png") // Increased size for better visibility
-const CAR_MARKER_IMAGE = "https://v0.dev/placeholder.svg?height=30&width=30"
-
-// Sample data
+// Sample data (your existing data)
 const services = [
   {
     id: "1",
@@ -65,7 +60,7 @@ const popularDestinations = [
   { id: "2", city: "Durban", image: require("../../assets/nthomeAir_images/download (1).jpg") },
   { id: "3", city: "Johannesburg", image: require("../../assets/nthomeAir_images/download (2).jpg") },
   { id: "4", city: "Kruger National Park", image: require("../../assets/nthomeAir_images/greater.jpg") },
-  { id: "5", city: "Victoria Falls", image: require("../../assets/nthomeAir_images/Victoria.jpg") }, // cross-border
+  { id: "5", city: "Victoria Falls", image: require("../../assets/nthomeAir_images/Victoria.jpg") },
 ]
 
 const recentSearches = [
@@ -102,105 +97,219 @@ const exclusiveOffers = [
   },
 ]
 
+// Improved Weather Function with Fallback
+const fetchWeatherData = async (latitude, longitude) => {
+  try {
+    const API_KEY = process.env.EXPO_PUBLIC_OPENWEATHER_API_KEY;
+
+    console.log('Fetching real weather data...');
+    const response = await fetch(
+      `https://api.openweathermap.org/data/2.5/weather?lat=${latitude}&lon=${longitude}&units=metric&appid=${API_KEY}`
+    );
+
+    if (!response.ok) {
+      throw new Error(`API failed with status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    return {
+      temp: Math.round(data.main.temp),
+      condition: data.weather[0].description,
+      icon: getWeatherIcon(data.weather[0].id),
+      wind: Math.round(data.wind.speed * 3.6),
+      humidity: data.main.humidity,
+      location: data.name
+    };
+  } catch (error) {
+    console.log('Using mock weather data due to error:', error.message);
+    // return getMockWeatherData();
+  }
+};
+
+// Realistic South Africa weather data
+// const getMockWeatherData = () => {
+//   // const saWeatherConditions = [
+//   //   { condition: "Sunny", icon: "weather-sunny", tempRange: [20, 35], windRange: [5, 15] },
+//   //   { condition: "Partly Cloudy", icon: "weather-partly-cloudy", tempRange: [18, 28], windRange: [8, 18] },
+//   //   { condition: "Cloudy", icon: "weather-cloudy", tempRange: [16, 24], windRange: [10, 20] },
+//   //   { condition: "Light Rain", icon: "weather-rainy", tempRange: [14, 22], windRange: [12, 25] },
+//   //   { condition: "Thunderstorms", icon: "weather-lightning-rainy", tempRange: [15, 23], windRange: [15, 30] },
+//   //   { condition: "Clear", icon: "weather-night", tempRange: [12, 20], windRange: [5, 12] }
+//   // ];
+  
+//   const randomCondition = saWeatherConditions[Math.floor(Math.random() * saWeatherConditions.length)];
+//   const [minTemp, maxTemp] = randomCondition.tempRange;
+//   const [minWind, maxWind] = randomCondition.windRange;
+  
+//   const temp = Math.floor(Math.random() * (maxTemp - minTemp + 1)) + minTemp;
+//   const wind = Math.floor(Math.random() * (maxWind - minWind + 1)) + minWind;
+//   const humidity = Math.floor(Math.random() * 30) + 50; // 50-80% typical for SA
+  
+//   return {
+//     temp: temp,
+//     condition: randomCondition.condition,
+//     icon: randomCondition.icon,
+//     wind: wind,
+//     humidity: humidity,
+//     location: "Current Location"
+//   };
+// };
+
+const getWeatherIcon = (weatherCode) => {
+  if (weatherCode >= 200 && weatherCode < 300) return 'weather-lightning';
+  if (weatherCode >= 300 && weatherCode < 500) return 'weather-pouring';
+  if (weatherCode >= 500 && weatherCode < 600) return 'weather-rainy';
+  if (weatherCode >= 600 && weatherCode < 700) return 'weather-snowy';
+  if (weatherCode >= 700 && weatherCode < 800) return 'weather-fog';
+  if (weatherCode === 800) return 'weather-sunny';
+  if (weatherCode > 800) return 'weather-cloudy';
+  return 'weather-cloudy';
+};
+
 const HomeScreen = ({ navigation }) => {
-  // State for Weather Section
   const [weather, setWeather] = useState(null)
   const [loadingWeather, setLoadingWeather] = useState(true)
-  const [weatherError, setWeatherError] = useState(false)
-
-  // State for Drawer Navigation
+  const [userLocation, setUserLocation] = useState(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
-
-  // Function to toggle the drawer
-  const toggleDrawer = () => setDrawerOpen(!drawerOpen)
-
-  // State for Map Section
   const _map = useRef(null)
   const [latlng, setLatlng] = useState(null)
   const [carsAround, setCarsAround] = useState([])
-  const [mapError, setMapError] = useState(false)
 
   const user = useSelector((state) => state.auth.user)
   const PROFILE_IMAGE = user?.profile_picture || "https://v0.dev/placeholder.svg?height=100&width=100"
 
-  // Simulate fetching weather data
+  // Get location and weather
   useEffect(() => {
-    setLoadingWeather(true)
-    setWeatherError(false)
-    const timer = setTimeout(() => {
-      if (Math.random() > 0.2) {
-        setWeather({
-          temp: 25,
-          condition: "Partly Cloudy",
-          icon: "weather-partly-cloudy",
-          wind: 15,
-        })
-        setLoadingWeather(false)
-      } else {
-        setWeatherError(true)
-        setLoadingWeather(false)
-      }
-    }, 2000)
-    return () => clearTimeout(timer)
-  }, [])
+    let isMounted = true;
 
-  // Simulate fetching map data (user location and cars around)
-  useEffect(() => {
-    setMapError(false)
-    const timer = setTimeout(() => {
-      if (Math.random() > 0.1) {
-        const dummyLat = 34.0522
-        const dummyLng = -118.2437
-        setLatlng({ latitude: dummyLat, longitude: dummyLng })
-        const generatedCars = Array.from({ length: 10 }).map(() => ({
-          latitude: dummyLat + (Math.random() - 0.5) * 0.02,
-          longitude: dummyLng + (Math.random() - 0.5) * 0.02,
-        }))
-        setCarsAround(generatedCars)
-      } else {
-        setMapError(true)
+    const getLocationAndWeather = async () => {
+      try {
+        setLoadingWeather(true);
+
+        // Request location permission
+        let { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          console.log('Location permission denied');
+          // Use default South Africa location
+          const defaultLocation = { latitude: -25.7479, longitude: 28.2293 }; // Pretoria
+          setUserLocation(defaultLocation);
+          setLatlng(defaultLocation);
+          const weatherData = await fetchWeatherData(defaultLocation.latitude, defaultLocation.longitude);
+          if (isMounted) setWeather(weatherData);
+          return;
+        }
+
+        // Get current location
+        let location = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+
+        if (!isMounted) return;
+
+        const { latitude, longitude } = location.coords;
+        setUserLocation({ latitude, longitude });
+        setLatlng({ latitude, longitude });
+
+        // Fetch weather data
+        const weatherData = await fetchWeatherData(latitude, longitude);
+        if (!isMounted) return;
+        setWeather(weatherData);
+
+        // Generate cars around location
+        const generatedCars = Array.from({ length: 8 }).map(() => ({
+          latitude: latitude + (Math.random() - 0.5) * 0.01,
+          longitude: longitude + (Math.random() - 0.5) * 0.01,
+        }));
+        setCarsAround(generatedCars);
+
+      } catch (error) {
+        console.log('Error:', error);
+        if (!isMounted) return;
+        
+        // Fallback to default data
+        const fallbackLocation = { latitude: -25.7479, longitude: 28.2293 };
+        setUserLocation(fallbackLocation);
+        setLatlng(fallbackLocation);
+        const fallbackWeather = getMockWeatherData();
+        setWeather(fallbackWeather);
+      } finally {
+        if (isMounted) {
+          setLoadingWeather(false);
+        }
       }
-    }, 2500)
-    return () => clearTimeout(timer)
-  }, [])
+    };
+
+    getLocationAndWeather();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Refresh weather
+  const refreshWeather = async () => {
+    setLoadingWeather(true);
+    try {
+      const locationToUse = userLocation || { latitude: -25.7479, longitude: 28.2293 };
+      const weatherData = await fetchWeatherData(locationToUse.latitude, locationToUse.longitude);
+      setWeather(weatherData);
+    } catch (error) {
+      console.error('Error refreshing weather:', error);
+    } finally {
+      setLoadingWeather(false);
+    }
+  };
+
+  // Weather widget
+  const renderWeatherWidget = () => (
+    <TouchableOpacity onPress={refreshWeather} style={styles.weatherWidget}>
+      {loadingWeather ? (
+        <ActivityIndicator size="small" color="#0DCAF0" />
+      ) : weather ? (
+        <>
+          <MaterialCommunityIcons
+            name={weather.icon}
+            color="#0DCAF0"
+            size={20}
+            style={styles.weatherIcon}
+          />
+          <Text style={styles.weatherTempText}>{weather.temp}°</Text>
+          <View style={styles.weatherDetails}>
+            <Text style={styles.weatherCondition}>
+              {weather.condition.length > 10
+                ? weather.condition.substring(0, 10) + '...'
+                : weather.condition
+              }
+            </Text>
+            <View style={styles.weatherMetric}>
+              <MaterialCommunityIcons name="weather-windy" color="#666" size={12} />
+              <Text style={styles.weatherMetricText}>{weather.wind} km/h</Text>
+            </View>
+          </View>
+        </>
+      ) : (
+        <View style={styles.weatherError}>
+          <MaterialCommunityIcons name="refresh" color="#666" size={16} />
+          <Text style={styles.weatherErrorText}>Refresh</Text>
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+
+  const toggleDrawer = () => setDrawerOpen(!drawerOpen)
 
   return (
     <View style={styles.fullScreenContainer}>
-      {/* New Header Section */}
+      {/* Header Section */}
       <View style={styles.newHeader}>
         <SafeAreaView style={styles.safeArea}>
-          {/* Top Row: Drawer Icon (Left) and Profile Picture (Right) */}
-        // In your HomeScreen component, update the headerTopBar section:
           <View style={styles.headerTopBar}>
             <TouchableOpacity onPress={toggleDrawer} style={styles.roundButton}>
-              <Ionicons type="material-community" name="menu" color={"#0DCAF0"} size={30} />
+              <Ionicons name="menu" color="#0DCAF0" size={30} />
             </TouchableOpacity>
 
-            {/* Weather Widget - Added between menu and profile */}
-            <View style={styles.weatherWidget}>
-              {loadingWeather ? (
-                <ActivityIndicator size="small" color="#0DCAF0" />
-              ) : weatherError || !weather ? (
-                <MaterialCommunityIcons name="weather-cloudy-alert" color="#666" size={20} />
-              ) : (
-                <>
-                  <MaterialCommunityIcons
-                    name={weather.icon}
-                    color="#0DCAF0"
-                    size={20}
-                    style={styles.weatherIcon}
-                  />
-                  <Text style={styles.weatherTempText}>{weather.temp}°</Text>
-                  <View style={styles.weatherDetails}>
-                    <Text style={styles.weatherCondition}>{weather.condition}</Text>
-                    <View style={styles.weatherMetric}>
-                      <MaterialCommunityIcons name="weather-windy" color="#666" size={14} />
-                      <Text style={styles.weatherMetricText}>{weather.wind} km/h</Text>
-                    </View>
-                  </View>
-                </>
-              )}
-            </View>
+            {renderWeatherWidget()}
 
             <TouchableOpacity onPress={() => navigation.navigate('Profile')} style={styles.profilePictureContainer}>
               <Image
@@ -209,9 +318,8 @@ const HomeScreen = ({ navigation }) => {
               />
             </TouchableOpacity>
           </View>
-          {/* Main Content Row: Left Column (Text + Button) and Right Column (Image) */}
+          
           <View style={styles.mainHeaderContentRow}>
-            {/* Left Column: Text and Button */}
             <View style={styles.leftColumn}>
               <Text style={styles.welcomeText}>Welcome back!</Text>
               <Text style={styles.title}>
@@ -220,13 +328,12 @@ const HomeScreen = ({ navigation }) => {
               <Text style={styles.slogan}>Nthome ka Petjana!</Text>
               <TouchableOpacity style={styles.headerButton} onPress={() => navigation.navigate('RequestScreen')}>
                 <Text style={styles.headerButtonText}>Request Ride</Text>
-                <Ionicons name="arrow-forward" size={18} color="#FFFFFF" style={styles.headerButtonIcon} />
+                <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
               </TouchableOpacity>
             </View>
-            {/* Right Column: Image */}
             <View style={styles.rightColumn}>
               <Image
-                source={HEADER_RIGHT_IMAGE} // Main header image
+                source={HEADER_RIGHT_IMAGE}
                 style={styles.headerRightImage}
                 resizeMode="contain"
               />
@@ -234,15 +341,15 @@ const HomeScreen = ({ navigation }) => {
           </View>
         </SafeAreaView>
       </View>
-      {/* Divider */}
+      
       <View style={styles.headerDivider} />
-      {/* Content Sections (formerly bottom sheet) */}
+      
+      {/* Content Sections */}
       <ScrollView
         style={styles.scrollViewContent}
         contentContainerStyle={styles.scrollViewInnerContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Services Section */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Our Services</Text>
@@ -252,29 +359,18 @@ const HomeScreen = ({ navigation }) => {
           </View>
           <FlatList
             data={services}
-            keyExtractor={(item) => item.id}
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.servicesListContent}
-            snapToInterval={SERVICE_CARD_WIDTH + SERVICE_CARD_SPACING}
-            decelerationRate="fast"
             renderItem={({ item }) => (
               <TouchableOpacity
                 style={styles.serviceCard}
-                activeOpacity={0.8}
                 onPress={() => {
                   switch (item.id) {
-                    case "1":
-                      navigation.navigate("RequestScreen");
-                      break;
-                    case "2":
-                      navigation.navigate("FlightWelcomeScreen");
-                      break;
-                    case "3":
-                      navigation.navigate("services");
-                      break;
-                    default:
-                      break;
+                    case "1": navigation.navigate("RequestScreen"); break;
+                    case "2": navigation.navigate("FlightWelcomeScreen"); break;
+                    case "3": navigation.navigate("services"); break;
+                    default: break;
                   }
                 }}
               >
@@ -285,56 +381,55 @@ const HomeScreen = ({ navigation }) => {
                 </View>
               </TouchableOpacity>
             )}
+            keyExtractor={(item) => item.id}
           />
         </View>
-        {/* Popular Destinations Slider */}
+        
+        {/* Other sections remain the same */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Popular Destinations</Text>
           <FlatList
             data={popularDestinations}
-            keyExtractor={(item) => item.id}
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.horizontalListContent}
             renderItem={({ item }) => (
-              <TouchableOpacity style={styles.popularCard} activeOpacity={0.8}>
+              <TouchableOpacity style={styles.popularCard}>
                 <Image source={item.image} style={styles.popularImage} />
                 <LinearGradient colors={["transparent", "rgba(0,0,0,0.7)"]} style={styles.popularCardOverlay}>
                   <Text style={styles.popularCity}>{item.city}</Text>
                 </LinearGradient>
               </TouchableOpacity>
             )}
+            keyExtractor={(item) => item.id}
           />
         </View>
-        {/* Recent Searches Section */}
+        
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Recent Searches</Text>
           <FlatList
             data={recentSearches}
-            keyExtractor={(item) => item.id}
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.horizontalListContent}
             renderItem={({ item }) => (
-              <TouchableOpacity style={styles.recentSearchTag} activeOpacity={0.7}>
+              <TouchableOpacity style={styles.recentSearchTag}>
                 <Text style={styles.recentSearchText}>{item.term}</Text>
               </TouchableOpacity>
             )}
+            keyExtractor={(item) => item.id}
           />
         </View>
-        {/* Exclusive Offers Section */}
+        
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Exclusive Offers</Text>
           <FlatList
             data={exclusiveOffers}
-            keyExtractor={(item) => item.id}
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.horizontalListContent}
-            snapToInterval={OFFER_CARD_WIDTH + OFFER_CARD_SPACING}
-            decelerationRate="fast"
             renderItem={({ item }) => (
-              <TouchableOpacity style={styles.offerCard} activeOpacity={0.8}>
+              <TouchableOpacity style={styles.offerCard}>
                 <Image source={item.image} style={styles.offerImage} />
                 <View style={styles.offerContent}>
                   <Text style={styles.offerDiscount}>{item.discount}</Text>
@@ -343,59 +438,29 @@ const HomeScreen = ({ navigation }) => {
                 </View>
               </TouchableOpacity>
             )}
+            keyExtractor={(item) => item.id}
           />
         </View>
-        {/* Weather Section */}
-        {/* <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Weather Forecast</Text>
-          <View style={styles.weatherCard}>
-            {loadingWeather ? (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#0DCAF0" />
-                <Text style={styles.loadingText}>Loading weather data...</Text>
-              </View>
-            ) : weatherError || !weather ? (
-              <View style={styles.errorContainer}>
-                <MaterialCommunityIcons name="weather-cloudy-alert" color="#666" size={48} />
-                <Text style={styles.errorText}>Unable to load weather data</Text>
-              </View>
-            ) : (
-              <View style={styles.currentWeather}>
-                <View style={styles.weatherMain}>
-                  <MaterialCommunityIcons name={weather.icon} color="#0DCAF0" size={48} />
-                  <Text style={styles.tempText}>{weather.temp}°C</Text>
-                </View>
-                <View style={styles.weatherDetails}>
-                  <Text style={styles.conditionText}>{weather.condition}</Text>
-                  <View style={styles.weatherMetrics}>
-                    <View style={styles.metric}>
-                      <MaterialCommunityIcons name="weather-windy" color="#666" size={18} />
-                      <Text style={styles.metricText}>{weather.wind} km/h</Text>
-                    </View>
-                  </View>
-                </View>
-              </View>
-            )}
-          </View>
-        </View> */}
       </ScrollView>
+      
       <CustomDrawer isOpen={drawerOpen} toggleDrawer={toggleDrawer} navigation={navigation} />
     </View>
   )
 }
 
+// Styles remain the same as your previous version
 const styles = StyleSheet.create({
   fullScreenContainer: {
     flex: 1,
     backgroundColor: "#E8F0F2",
   },
   newHeader: {
-    backgroundColor: "#FFFFFF", // White background
-    height: height * 0.40, // Adjust header height as needed
-    minHeight: 360, // Minimum height to ensure content fits
+    backgroundColor: "#FFFFFF",
+    height: height * 0.40,
+    minHeight: 360,
     paddingHorizontal: 20,
     paddingBottom: 10,
-    justifyContent: "space-between", // Distribute content vertically
+    justifyContent: "space-between",
     overflow: 'hidden',
     ...Platform.select({
       ios: {
@@ -411,7 +476,7 @@ const styles = StyleSheet.create({
   },
   safeArea: {
     flex: 1,
-    paddingTop: Platform.OS === 'android' ? 30 : 0, // Adjust for Android status bar
+    paddingTop: Platform.OS === 'android' ? 30 : 0,
   },
   headerTopBar: {
     top: 10,
@@ -419,13 +484,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 5,
-    // marginBottom: 10, // Space below the top bar
   },
   roundButton: {
     backgroundColor: "#fff",
     borderRadius: 30,
-    width: width < 400 ? 50 : 50,
-    height: width < 400 ? 50 : 50,
+    width: 50,
+    height: 50,
     justifyContent: "center",
     alignItems: "center",
     shadowColor: "#000",
@@ -438,59 +502,56 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    borderRadius: 20,
-    paddingVertical: 6,
     paddingHorizontal: 12,
-    ...Platform.select({
-      ios: {
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-      },
-      android: {
-        elevation: 3,
-      },
-    }),
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginHorizontal: 10,
+    minWidth: 150,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  weatherError: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  weatherErrorText: {
+    fontSize: 12,
+    color: '#666',
+    marginLeft: 4,
   },
   weatherIcon: {
-    marginRight: 5,
+    marginRight: 6,
   },
   weatherTempText: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
+    fontWeight: 'bold',
+    color: '#0DCAF0',
     marginRight: 8,
   },
   weatherDetails: {
-    alignItems: 'flex-start',
+    flex: 1,
   },
   weatherCondition: {
-    fontSize: 12,
-    color: '#555',
+    fontSize: 10,
+    color: '#333',
     fontWeight: '500',
   },
   weatherMetric: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginTop: 2,
   },
   weatherMetricText: {
-    fontSize: 10,
+    fontSize: 9,
     color: '#666',
-    marginLeft: 3,
-  },
-  drawerIconContainer: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: '#F0F0F0', // Light background for the icon
-    justifyContent: 'center',
-    alignItems: 'center',
+    marginLeft: 2,
   },
   profilePictureContainer: {
-
-    width: width < 400 ? 50 : 50,
-    height: width < 400 ? 50 : 50,
+    width: 50,
+    height: 50,
     borderRadius: 30,
     backgroundColor: '#0DCAF0',
     justifyContent: 'center',
@@ -505,52 +566,52 @@ const styles = StyleSheet.create({
     borderRadius: 25,
   },
   mainHeaderContentRow: {
-    flex: 1, // Takes up remaining vertical space
+    flex: 1,
     flexDirection: 'row',
-    alignItems: 'center', // Vertically center items in the row
-    justifyContent: 'space-between', // Space out left and right columns
-    marginBottom: 10, // Space above the bottom button
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
   },
   leftColumn: {
-    flex: 1, // Takes up available space
+    flex: 1,
     maxWidth: '60%',
-    justifyContent: 'center', // Vertically center content within its column
-    alignItems: 'flex-start', // Align text and button to the left
-    paddingRight: 10, // Add some spacing from the right image
+    justifyContent: 'center',
+    alignItems: 'flex-start',
+    paddingRight: 10,
   },
   rightColumn: {
     flex: 1,
-    maxWidth: '50%', // Limit image column width
+    maxWidth: '50%',
     justifyContent: 'center',
     alignItems: 'flex-end',
   },
   headerRightImage: {
-    width: '100%', // Use percentage for responsive width
+    width: '100%',
     height: undefined,
-    aspectRatio: 1, // Maintain square aspect ratio
-    maxWidth: 280, // Maximum size
+    aspectRatio: 1,
+    maxWidth: 280,
     maxHeight: 290,
   },
   welcomeText: {
     fontSize: width < 400 ? 16 : 18,
-    color: '#333', // Dark color for white background
+    color: '#333',
     marginBottom: 6,
     fontWeight: '500',
   },
   title: {
     fontSize: width < 400 ? 22 : 28,
-    color: "#1A202C", // Dark color for white background
+    color: "#1A202C",
     fontWeight: "600",
     marginBottom: 10,
     textAlign: "left",
   },
   titleAccent: {
-    color: "#0A94B8", // Accent color
+    color: "#0A94B8",
     fontWeight: "bold",
   },
   slogan: {
     fontSize: width < 400 ? 12 : 14,
-    color: '#555', // Dark color for white background
+    color: '#555',
     fontStyle: 'italic',
     marginTop: 0,
     marginBottom: 10,
@@ -559,7 +620,7 @@ const styles = StyleSheet.create({
   headerButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#0A94B8', // Solid color for visibility
+    backgroundColor: '#0A94B8',
     paddingVertical: 12,
     paddingHorizontal: width < 400 ? 15 : 20,
     borderRadius: 25,
@@ -568,28 +629,25 @@ const styles = StyleSheet.create({
     marginTop: 0,
   },
   headerButtonText: {
-    color: '#FFFFFF', // White for contrast
+    color: '#FFFFFF',
     fontSize: width < 400 ? 14 : 16,
     fontWeight: '600',
     marginRight: 8,
   },
-  headerButtonIcon: {
-    // No specific styles needed
-  },
   headerDivider: {
-    height: 1, // Thickness of the divider
-    backgroundColor: '#E0E0E0', // Color of the divider
-    marginHorizontal: 20, // Match padding of sections
-    marginTop: -10, // Pull it up slightly to be closer to the header
-    marginBottom: 20, // Space between divider and first section
+    height: 1,
+    backgroundColor: '#E0E0E0',
+    marginHorizontal: 20,
+    marginTop: -10,
+    marginBottom: 20,
   },
   scrollViewContent: {
     flex: 1,
-    backgroundColor: "#FFFFFF", // Background for the scrollable content
+    backgroundColor: "#FFFFFF",
   },
   scrollViewInnerContent: {
-    paddingTop: 25, // Padding at the top of the scrollable content
-    paddingBottom: 40, // Ensure enough space at the bottom
+    paddingTop: 25,
+    paddingBottom: 40,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -599,14 +657,14 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   seeAllText: {
-    color: '#0A94B8', // or any accent color
+    color: '#0A94B8',
     fontSize: 14,
     fontWeight: '600',
   },
   section: {
-    marginTop: 10, // Further reduced
-    marginBottom: -10, // Pulls up the next section
-    paddingHorizontal: 20, // Consistent horizontal padding for all sections
+    marginTop: 10,
+    marginBottom: -10,
+    paddingHorizontal: 20,
   },
   sectionTitle: {
     fontSize: 22,
@@ -760,113 +818,6 @@ const styles = StyleSheet.create({
   offerDescription: {
     fontSize: 14,
     color: "#777",
-  },
-  weatherCard: {
-    backgroundColor: "#fff",
-    borderRadius: 20,
-    padding: 25,
-    ...Platform.select({
-      ios: {
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.08,
-        shadowRadius: 8,
-      },
-      android: {
-        elevation: 4,
-      },
-    }),
-    minHeight: 130,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  loadingContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  loadingText: {
-    marginLeft: 10,
-    fontSize: 16,
-    color: "#888",
-  },
-  errorContainer: {
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  errorText: {
-    marginTop: 10,
-    fontSize: 16,
-    color: "#A0A0A0",
-    textAlign: "center",
-  },
-  currentWeather: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    width: "100%",
-  },
-  weatherMain: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  tempText: {
-    fontSize: 48,
-    fontWeight: "bold",
-    color: "#333",
-    marginLeft: 15,
-  },
-  weatherDetails: {
-    alignItems: "flex-end",
-  },
-  conditionText: {
-    fontSize: 18,
-    color: "#555",
-    marginBottom: 8,
-  },
-  weatherMetrics: {
-    flexDirection: "row",
-    marginTop: 5,
-  },
-  metric: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginLeft: 20,
-  },
-  metricText: {
-    fontSize: 14,
-    color: "#666",
-    marginLeft: 5,
-  },
-  mapCard: {
-    backgroundColor: "#fff",
-    borderRadius: 20,
-    overflow: "hidden",
-    ...Platform.select({
-      ios: {
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.08,
-        shadowRadius: 8,
-      },
-      android: {
-        elevation: 4,
-      },
-    }),
-  },
-  map: {
-    width: "100%",
-    height: 220,
-    borderRadius: 20,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  mapLoading: {
-    backgroundColor: "#F0F8FF",
-  },
-  carsAround: {
-    width: 35,
-    height: 35,
   },
 })
 
