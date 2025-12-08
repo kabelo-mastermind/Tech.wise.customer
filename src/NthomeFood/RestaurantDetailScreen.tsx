@@ -1,5 +1,4 @@
-// screens/RestaurantDetailScreen.js
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
     View,
     Text,
@@ -13,274 +12,296 @@ import {
     Dimensions,
     FlatList,
     ActivityIndicator,
-    Modal
+    Modal,
+    Alert
 } from 'react-native';
 import { Icon } from "react-native-elements"
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons"
-import { useSelector } from 'react-redux';
+import { useSelector, useDispatch } from 'react-redux';
+import { addToCart, removeFromCart } from '../redux/actions/orderActions';
+import { api } from '../../api';
 
 const { width, height } = Dimensions.get('window');
 
-// Responsive sizing functions
 const responsiveWidth = (percentage) => (width * percentage) / 100;
 const responsiveHeight = (percentage) => (height * percentage) / 100;
 const scaleFont = (size) => (width / 375) * size;
 
-// Enhanced food items data with sizes
-const foodItemsData = {
-    'KFC Mamelodi': [
-        {
-            id: 1,
-            name: 'Spicy Chicken Wings',
-            description: 'Crispy chicken wings with our special spicy sauce',
-            sizes: [
-                { size: '6 pieces', price: 'R129' },
-                { size: '12 pieces', price: 'R189' },
-                { size: '24 pieces', price: 'R299' }
-            ],
-            rating: 4.5,
-            image: require('../../assets/nthomeFood_images/chicken-wings.jpg'),
-            category: 'Chicken',
-            preparationTime: '15-20 min',
-            isVegetarian: false,
-            isSpicy: true
-        },
-        {
-            id: 2,
-            name: 'Zinger Burger Meal',
-            description: 'Crispy zinger burger with fries and drink',
-            sizes: [
-                { size: 'Regular', price: 'R99' },
-                { size: 'Large', price: 'R129' },
-                { size: 'Family', price: 'R189' }
-            ],
-            rating: 4.3,
-            image: require('../../assets/nthomeFood_images/chicken-burger.jpg'),
-            category: 'Burgers',
-            preparationTime: '10-15 min',
-            isVegetarian: false,
-            isSpicy: true
-        },
-        {
-            id: 3,
-            name: 'Streetwise 2',
-            description: '2 pieces of chicken, chips, and a drink',
-            sizes: [
-                { size: 'Regular', price: 'R89' },
-                { size: 'Large', price: 'R119' }
-            ],
-            rating: 4.2,
-            image: require('../../assets/nthomeFood_images/buff-burger.jpg'),
-            category: 'Meals',
-            preparationTime: '12-18 min',
-            isVegetarian: false,
-            isSpicy: false
-        }
-    ],
-    'Chicken Licken': [
-        {
-            id: 1,
-            name: 'Fire Grilled Chicken',
-            description: 'Flame-grilled chicken with special seasoning',
-            sizes: [
-                { size: 'Quarter', price: 'R125' },
-                { size: 'Half', price: 'R175' },
-                { size: 'Full', price: 'R299' }
-            ],
-            rating: 4.4,
-            image: require('../../assets/nthomeFood_images/grilled-chicken.png'),
-            category: 'Chicken',
-            preparationTime: '20-25 min',
-            isVegetarian: false,
-            isSpicy: true
-        }
-    ],
-    'Debonairs Pizza': [
-        {
-            id: 1,
-            name: 'Pepperoni Pizza',
-            description: 'Classic pepperoni pizza with mozzarella cheese',
-            sizes: [
-                { size: 'Small', price: 'R199' },
-                { size: 'Medium', price: 'R299' },
-                { size: 'Large', price: 'R399' }
-            ],
-            rating: 4.7,
-            image: require('../../assets/nthomeFood_images/pepperoni-pizza.png'),
-            category: 'Pizza',
-            preparationTime: '25-30 min',
-            isVegetarian: false,
-            isSpicy: false
-        }
-    ]
-};
-
-// Default food items if restaurant not found
-const defaultFoodItems = [
-    {
-        id: 1,
-        name: 'Special Meal',
-        description: 'Chef\'s special meal of the day',
-        sizes: [
-            { size: 'Regular', price: 'R150' },
-            { size: 'Large', price: 'R200' }
-        ],
-        rating: 4.0,
-        image: require('../../assets/nthomeFood_images/buff-burger.jpg'),
-        category: 'Special',
-        preparationTime: '15-20 min',
-        isVegetarian: false,
-        isSpicy: false
-    }
-];
+const API_BASE_URL = api;
 
 const RestaurantDetailScreen = ({ navigation, route }) => {
     const { restaurant } = route.params;
     const [selectedCategory, setSelectedCategory] = useState('All');
-    const [cart, setCart] = useState([]);
     const [sizeModalVisible, setSizeModalVisible] = useState(false);
     const [selectedItem, setSelectedItem] = useState(null);
+    const [menuItems, setMenuItems] = useState([]);
+    const [loadingMenu, setLoadingMenu] = useState(true);
+    const [menuError, setMenuError] = useState(null);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [isSearching, setIsSearching] = useState(false);
+
     const user = useSelector((state) => state.auth.user);
+    const cart = useSelector((state) => state.order.cart);
+    const dispatch = useDispatch();
 
-    // Get food items for this restaurant
-    const restaurantFoodItems = foodItemsData[restaurant.name] || defaultFoodItems;
+    useEffect(() => {
+        fetchMenuItems();
+    }, [restaurant]);
 
-    // Get unique categories
-    const categories = ['All', ...new Set(restaurantFoodItems.map(item => item.category))];
+    useEffect(() => {
+        if (searchQuery.trim() === '') {
+            setIsSearching(false);
+            return;
+        }
+        setIsSearching(true);
+    }, [searchQuery]);
 
-    // Filter items by category
+    const fetchMenuItems = async () => {
+        try {
+            setLoadingMenu(true);
+            setMenuError(null);
+
+            const response = await fetch(`${API_BASE_URL}/menu_items/user/${restaurant.user_id}`);
+
+            if (!response.ok) {
+                throw new Error(`Failed to fetch menu items: ${response.status}`);
+            }
+
+            const data = await response.json();
+
+            const transformedMenuItems = data.map(item => ({
+                id: item.id,
+                name: item.item_name,
+                description: item.description || '',
+                sizes: [
+                    {
+                        size: 'Regular',
+                        price: `R${item.discounted_price || item.price}`
+                    }
+                ],
+                rating: 4.0,
+                image: item.image_url
+                    ? { uri: item.image_url }
+                    : require('../../assets/nthomeFood_images/restaurants/default-restaurant.png'),
+                category: item.category || item.category_name || 'Main',
+                preparationTime: '15-25 min',
+                isVegetarian: false,
+                isSpicy: false,
+                originalPrice: item.discount_percentage > 0 ? `R${item.price}` : null,
+                specialPrice: item.discount_percentage > 0 ? `R${item.discounted_price}` : null,
+                discount: item.discount_percentage > 0 ? `${item.discount_percentage}% OFF` : null,
+                isSpecial: item.is_special || false
+            }));
+
+            setMenuItems(transformedMenuItems);
+        } catch (error) {
+            console.error('Error fetching menu items:', error);
+            setMenuError(error.message);
+            setMenuItems(getFallbackMenuItems());
+        } finally {
+            setLoadingMenu(false);
+        }
+    };
+
+    const getFallbackMenuItems = () => {
+        return [
+            {
+                id: 1,
+                name: 'Special Meal',
+                description: 'Chef\'s special meal of the day',
+                sizes: [
+                    { size: 'Regular', price: 'R150' },
+                    { size: 'Large', price: 'R200' }
+                ],
+                rating: 4.0,
+                image: require('../../assets/nthomeFood_images/buff-burger.jpg'),
+                category: 'Special',
+                preparationTime: '15-20 min',
+                isVegetarian: false,
+                isSpicy: false
+            }
+        ];
+    };
+
+    const categories = useMemo(() => {
+        const uniqueCategories = [...new Set(menuItems.map(item => item.category))];
+        return ['All', ...uniqueCategories];
+    }, [menuItems]);
+
     const filteredFoodItems = useMemo(() => {
-        return selectedCategory === 'All'
-            ? restaurantFoodItems
-            : restaurantFoodItems.filter(item => item.category === selectedCategory);
-    }, [selectedCategory, restaurantFoodItems]);
+        let filtered = menuItems;
 
-    // Show size selection modal
+        if (searchQuery.trim() !== '') {
+            const query = searchQuery.toLowerCase().trim();
+            filtered = filtered.filter(item =>
+                item.name.toLowerCase().includes(query) ||
+                item.description.toLowerCase().includes(query) ||
+                item.category.toLowerCase().includes(query)
+            );
+        }
+
+        if (selectedCategory !== 'All') {
+            filtered = filtered.filter(item => item.category === selectedCategory);
+        }
+
+        return filtered;
+    }, [selectedCategory, menuItems, searchQuery]);
+
+    const clearSearch = () => {
+        setSearchQuery('');
+        setIsSearching(false);
+    };
+
     const showSizeSelection = (item) => {
         setSelectedItem(item);
         setSizeModalVisible(true);
     };
 
-    // Add item to cart with selected size
     const addToCartWithSize = (item, selectedSize) => {
         const cartItem = {
             ...item,
             selectedSize: selectedSize.size,
             price: selectedSize.price,
-            cartId: `${item.id}-${selectedSize.size}` // Unique ID for cart items with different sizes
+            cartId: `${item.id}-${selectedSize.size}`,
+            quantity: 1,
+            restaurant: restaurant.name,
+            restaurantId: restaurant.id, // Make sure this is included
+            restaurant_user_id: restaurant.user_id // Also include user_id if needed
         };
 
-        setCart(prevCart => {
-            const existingItem = prevCart.find(cartItem => 
-                cartItem.cartId === `${item.id}-${selectedSize.size}`
-            );
-            
-            if (existingItem) {
-                return prevCart.map(cartItem =>
-                    cartItem.cartId === `${item.id}-${selectedSize.size}`
-                        ? { ...cartItem, quantity: cartItem.quantity + 1 }
-                        : cartItem
-                );
-            } else {
-                return [...prevCart, { ...cartItem, quantity: 1 }];
-            }
-        });
-        
+        dispatch(addToCart(cartItem));
         setSizeModalVisible(false);
         setSelectedItem(null);
     };
 
-    // Remove item from cart
-    const removeFromCart = (cartId) => {
-        setCart(prevCart => {
-            const existingItem = prevCart.find(item => item.cartId === cartId);
-            if (existingItem && existingItem.quantity > 1) {
-                return prevCart.map(item =>
-                    item.cartId === cartId
-                        ? { ...item, quantity: item.quantity - 1 }
-                        : item
-                );
-            } else {
-                return prevCart.filter(item => item.cartId !== cartId);
-            }
-        });
-    };
-
-    // Get cart total
-    const cartTotal = cart.reduce((total, item) => {
-        const price = parseInt(item.price.replace('R', '').trim());
-        return total + (price * item.quantity);
-    }, 0);
-
-    // Get lowest price for display on food card
     const getLowestPrice = (sizes) => {
         const prices = sizes.map(size => parseInt(size.price.replace('R', '').trim()));
         return `R${Math.min(...prices)}`;
     };
 
-    // Render food item card in 2-column grid
-    const renderFoodItem = ({ item, index }) => (
-        <TouchableOpacity
-            style={styles.foodItemCard}
-            onPress={() => showSizeSelection(item)}
-        >
-            <View style={[
-                styles.foodImageContainer,
-                { backgroundColor: index % 2 === 0 ? '#E6F7FF' : '#F0F9FF' }
-            ]}>
-                <Image source={item.image} style={styles.foodImage} />
-                <View style={styles.ratingBadge}>
-                    <Text style={styles.ratingText}>⭐ {item.rating}</Text>
-                </View>
-                {item.isSpicy && (
-                    <View style={styles.spicyBadge}>
-                        <Ionicons name="flame" size={scaleFont(10)} color="#FF6B6B" />
-                    </View>
-                )}
+    const getDisplayPrice = (item) => {
+        if (item.specialPrice && item.originalPrice) {
+            return {
+                currentPrice: item.specialPrice,
+                originalPrice: item.originalPrice,
+                hasDiscount: true
+            };
+        }
+        return {
+            currentPrice: getLowestPrice(item.sizes),
+            originalPrice: null,
+            hasDiscount: false
+        };
+    };
+
+    const renderLoading = () => (
+        <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#0DCAF0" />
+            <Text style={styles.loadingText}>Loading menu...</Text>
+        </View>
+    );
+
+    const renderError = () => (
+        <View style={styles.errorContainer}>
+            <MaterialCommunityIcons name="alert-circle-outline" size={scaleFont(48)} color="#FF6B6B" />
+            <Text style={styles.errorText}>Failed to load menu</Text>
+            <Text style={styles.errorSubText}>{menuError}</Text>
+            <TouchableOpacity style={styles.retryButton} onPress={fetchMenuItems}>
+                <Text style={styles.retryButtonText}>Try Again</Text>
+            </TouchableOpacity>
+        </View>
+    );
+
+    const renderSearchInfo = () => {
+        if (searchQuery.trim() === '') return null;
+
+        return (
+            <View style={styles.searchInfoContainer}>
+                <Text style={styles.searchInfoText}>
+                    {filteredFoodItems.length} {filteredFoodItems.length === 1 ? 'result' : 'results'} for "{searchQuery}"
+                </Text>
+                <TouchableOpacity onPress={clearSearch} style={styles.clearSearchButton}>
+                    <Text style={styles.clearSearchText}>Clear</Text>
+                </TouchableOpacity>
             </View>
+        );
+    };
 
-            <View style={styles.foodInfo}>
-                <Text style={styles.foodName} numberOfLines={1}>{item.name}</Text>
-                <Text style={styles.foodDescription} numberOfLines={2}>{item.description}</Text>
+    const renderFoodItem = ({ item, index }) => {
+        const priceInfo = getDisplayPrice(item);
 
-                {/* Size indicators */}
-                <View style={styles.sizesContainer}>
-                    {item.sizes.slice(0, 2).map((size, idx) => (
-                        <View key={idx} style={styles.sizeChip}>
-                            <Text style={styles.sizeChipText}>{size.size}</Text>
+        return (
+            <TouchableOpacity
+                style={styles.foodItemCard}
+                onPress={() => showSizeSelection(item)}
+            >
+                <View style={[
+                    styles.foodImageContainer,
+                    { backgroundColor: index % 2 === 0 ? '#E6F7FF' : '#F0F9FF' }
+                ]}>
+                    <Image
+                        source={item.image}
+                        style={styles.foodImage}
+                        defaultSource={require('../../assets/nthomeFood_images/restaurants/default-restaurant.png')}
+                    />
+
+                    {item.discount && (
+                        <View style={styles.discountBadge}>
+                            <Text style={styles.discountText}>{item.discount}</Text>
                         </View>
-                    ))}
-                    {item.sizes.length > 2 && (
-                        <View style={styles.moreSizesChip}>
-                            <Text style={styles.moreSizesText}>+{item.sizes.length - 2}</Text>
+                    )}
+
+                    <View style={styles.ratingBadge}>
+                        <Text style={styles.ratingText}>⭐ {item.rating}</Text>
+                    </View>
+
+                    {item.isSpecial && (
+                        <View style={styles.specialBadge}>
+                            <Ionicons name="flash" size={scaleFont(10)} color="#FFD700" />
+                        </View>
+                    )}
+
+                    {item.isSpicy && (
+                        <View style={styles.spicyBadge}>
+                            <Ionicons name="flame" size={scaleFont(10)} color="#FF6B6B" />
                         </View>
                     )}
                 </View>
 
-                <View style={styles.foodDetails}>
-                    <View style={styles.detailItem}>
-                        <Ionicons name="time-outline" size={scaleFont(10)} color="#666" />
-                        <Text style={styles.detailText}>{item.preparationTime}</Text>
+                <View style={styles.foodInfo}>
+                    <Text style={styles.foodName} numberOfLines={1}>{item.name}</Text>
+                    <Text style={styles.foodDescription} numberOfLines={2}>{item.description}</Text>
+
+                    <View style={styles.priceContainer}>
+                        <View>
+                            {priceInfo.hasDiscount ? (
+                                <>
+                                    <Text style={styles.originalPrice}>{priceInfo.originalPrice}</Text>
+                                    <Text style={styles.specialPrice}>{priceInfo.currentPrice}</Text>
+                                </>
+                            ) : (
+                                <Text style={styles.foodPrice}>{priceInfo.currentPrice}</Text>
+                            )}
+                        </View>
+                        <TouchableOpacity
+                            style={styles.addButton}
+                            onPress={() => showSizeSelection(item)}
+                        >
+                            <Text style={styles.addButtonText}>+</Text>
+                        </TouchableOpacity>
+                    </View>
+
+                    <View style={styles.foodDetails}>
+                        <View style={styles.detailItem}>
+                            <Ionicons name="time-outline" size={scaleFont(10)} color="#666" />
+                            <Text style={styles.detailText}>{item.preparationTime}</Text>
+                        </View>
                     </View>
                 </View>
+            </TouchableOpacity>
+        );
+    };
 
-                <View style={styles.priceContainer}>
-                    <View>
-                        <Text style={styles.priceFrom}>From</Text>
-                        <Text style={styles.foodPrice}>{getLowestPrice(item.sizes)}</Text>
-                    </View>
-                    <TouchableOpacity
-                        style={styles.addButton}
-                        onPress={() => showSizeSelection(item)}
-                    >
-                        <Text style={styles.addButtonText}>+</Text>
-                    </TouchableOpacity>
-                </View>
-            </View>
-        </TouchableOpacity>
-    );
-
-    // Render cart item
     const renderCartItem = ({ item }) => (
         <View style={styles.cartItem}>
             <View style={styles.cartItemInfo}>
@@ -291,16 +312,16 @@ const RestaurantDetailScreen = ({ navigation, route }) => {
             <View style={styles.cartItemControls}>
                 <TouchableOpacity
                     style={styles.quantityButton}
-                    onPress={() => removeFromCart(item.cartId)}
+                    onPress={() => dispatch(removeFromCart(item.cartId))}
                 >
                     <Text style={styles.quantityButtonText}>-</Text>
                 </TouchableOpacity>
                 <Text style={styles.quantityText}>{item.quantity}</Text>
                 <TouchableOpacity
                     style={styles.quantityButton}
-                    onPress={() => addToCartWithSize(item, { 
-                        size: item.selectedSize, 
-                        price: item.price 
+                    onPress={() => addToCartWithSize(item, {
+                        size: item.selectedSize,
+                        price: item.price
                     })}
                 >
                     <Text style={styles.quantityButtonText}>+</Text>
@@ -309,11 +330,15 @@ const RestaurantDetailScreen = ({ navigation, route }) => {
         </View>
     );
 
+    const cartTotal = cart.reduce((total, item) => {
+        const price = parseInt(item.price.replace('R', '').trim());
+        return total + (price * item.quantity);
+    }, 0);
+
     return (
         <SafeAreaView style={styles.container}>
             <StatusBar barStyle="dark-content" backgroundColor="#fff" />
 
-            {/* Header */}
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
                     <Ionicons name="arrow-back" size={scaleFont(24)} color="#333" />
@@ -322,7 +347,6 @@ const RestaurantDetailScreen = ({ navigation, route }) => {
                 <TouchableOpacity
                     style={styles.cartButton}
                     onPress={() => navigation.navigate('Cart', {
-                        cart: cart,
                         restaurant: restaurant
                     })}
                 >
@@ -335,9 +359,12 @@ const RestaurantDetailScreen = ({ navigation, route }) => {
                 </TouchableOpacity>
             </View>
 
-            {/* Restaurant Info Banner */}
             <View style={styles.restaurantBanner}>
-                <Image source={restaurant.image} style={styles.restaurantImage} />
+                <Image
+                    source={restaurant.image}
+                    style={styles.restaurantImage}
+                    defaultSource={require('../../assets/nthomeFood_images/restaurants/default-restaurant.png')}
+                />
                 <View style={styles.restaurantOverlay}>
                     <Text style={styles.restaurantName}>{restaurant.name}</Text>
                     <View style={styles.restaurantDetails}>
@@ -360,58 +387,103 @@ const RestaurantDetailScreen = ({ navigation, route }) => {
                 </View>
             </View>
 
-            {/* Categories Filter */}
-            <View style={styles.categoriesContainer}>
-                <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.categoriesScrollContent}
-                >
-                    {categories.map((category) => (
-                        <TouchableOpacity
-                            key={category}
-                            style={[
-                                styles.categoryChip,
-                                selectedCategory === category && styles.categoryChipSelected
-                            ]}
-                            onPress={() => setSelectedCategory(category)}
-                        >
-                            <Text style={[
-                                styles.categoryText,
-                                selectedCategory === category && styles.categoryTextSelected
-                            ]}>
-                                {category}
-                            </Text>
+            <View style={styles.searchContainer}>
+                <View style={styles.searchWrapper}>
+                    <TextInput
+                        style={styles.searchInput}
+                        placeholder="Search menu items..."
+                        placeholderTextColor="#999"
+                        value={searchQuery}
+                        onChangeText={setSearchQuery}
+                    />
+                    {searchQuery ? (
+                        <TouchableOpacity style={styles.clearButton} onPress={clearSearch}>
+                            <Icon type="material-community" name="close" color={"#fff"} size={scaleFont(18)} />
                         </TouchableOpacity>
-                    ))}
-                </ScrollView>
+                    ) : (
+                        <TouchableOpacity style={styles.searchIcon}>
+                            <Icon type="material-community" name="magnify" color={"#fff"} size={scaleFont(18)} />
+                        </TouchableOpacity>
+                    )}
+                </View>
             </View>
 
-            {/* Food Items Grid */}
+            {categories.length > 1 && searchQuery.trim() === '' && (
+                <View style={styles.categoriesContainer}>
+                    <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={styles.categoriesScrollContent}
+                    >
+                        {categories.map((category) => (
+                            <TouchableOpacity
+                                key={category}
+                                style={[
+                                    styles.categoryChip,
+                                    selectedCategory === category && styles.categoryChipSelected
+                                ]}
+                                onPress={() => setSelectedCategory(category)}
+                            >
+                                <Text style={[
+                                    styles.categoryText,
+                                    selectedCategory === category && styles.categoryTextSelected
+                                ]}>
+                                    {category}
+                                </Text>
+                            </TouchableOpacity>
+                        ))}
+                    </ScrollView>
+                </View>
+            )}
+
+            {renderSearchInfo()}
+
             <View style={styles.foodItemsSection}>
-                <Text style={styles.sectionTitle}>Menu ({filteredFoodItems.length} items)</Text>
-                <FlatList
-                    data={filteredFoodItems}
-                    renderItem={renderFoodItem}
-                    keyExtractor={(item) => `${item.id}-${selectedCategory}`}
-                    numColumns={2}
-                    showsVerticalScrollIndicator={false}
-                    contentContainerStyle={styles.foodItemsGrid}
-                    columnWrapperStyle={styles.columnWrapper}
-                    key={`food-grid-${selectedCategory}`}
-                    ListEmptyComponent={
-                        <View style={styles.emptyState}>
-                            <Ionicons name="restaurant-outline" size={scaleFont(64)} color="#ccc" />
-                            <Text style={styles.emptyStateTitle}>No items found</Text>
-                            <Text style={styles.emptyStateText}>
-                                Try selecting a different category
-                            </Text>
-                        </View>
-                    }
-                />
+                <Text style={styles.sectionTitle}>
+                    {searchQuery.trim() !== '' ? 'Search Results' : 'Menu'} ({filteredFoodItems.length} {filteredFoodItems.length === 1 ? 'item' : 'items'})
+                </Text>
+
+                {loadingMenu ? (
+                    renderLoading()
+                ) : menuError && menuItems.length === 0 ? (
+                    renderError()
+                ) : (
+                    <FlatList
+                        data={filteredFoodItems}
+                        renderItem={renderFoodItem}
+                        keyExtractor={(item) => `${item.id}-${selectedCategory}-${searchQuery}`}
+                        numColumns={2}
+                        showsVerticalScrollIndicator={false}
+                        contentContainerStyle={styles.foodItemsGrid}
+                        columnWrapperStyle={styles.columnWrapper}
+                        key={`food-grid-${selectedCategory}-${searchQuery}`}
+                        ListEmptyComponent={
+                            <View style={styles.emptyState}>
+                                <Ionicons
+                                    name={searchQuery ? "search-outline" : "restaurant-outline"}
+                                    size={scaleFont(64)}
+                                    color="#ccc"
+                                />
+                                <Text style={styles.emptyStateTitle}>
+                                    {searchQuery ? 'No items found' : 'No menu items available'}
+                                </Text>
+                                <Text style={styles.emptyStateText}>
+                                    {searchQuery
+                                        ? `No results for "${searchQuery}". Try different keywords.`
+                                        : 'This restaurant hasn\'t added any items to their menu yet.'
+                                    }
+                                </Text>
+                                {searchQuery && (
+                                    <TouchableOpacity style={styles.clearSearchFullButton} onPress={clearSearch}>
+                                        <Text style={styles.clearSearchFullButtonText}>Clear Search</Text>
+                                    </TouchableOpacity>
+                                )}
+                            </View>
+                        }
+                    />
+                )}
             </View>
 
-            {/* Size Selection Modal */}
             <Modal
                 animationType="slide"
                 transparent={true}
@@ -426,8 +498,8 @@ const RestaurantDetailScreen = ({ navigation, route }) => {
                         {selectedItem && (
                             <>
                                 <View style={styles.modalHeader}>
-                                    <Text style={styles.modalTitle}>Select Size</Text>
-                                    <TouchableOpacity 
+                                    <Text style={styles.modalTitle}>Add to Cart</Text>
+                                    <TouchableOpacity
                                         style={styles.closeButton}
                                         onPress={() => {
                                             setSizeModalVisible(false);
@@ -437,41 +509,49 @@ const RestaurantDetailScreen = ({ navigation, route }) => {
                                         <Ionicons name="close" size={scaleFont(24)} color="#666" />
                                     </TouchableOpacity>
                                 </View>
-                                
+
                                 <View style={styles.modalItemInfo}>
-                                    <Image source={selectedItem.image} style={styles.modalItemImage} />
+                                    <Image
+                                        source={selectedItem.image}
+                                        style={styles.modalItemImage}
+                                        defaultSource={require('../../assets/nthomeFood_images/restaurants/default-restaurant.png')}
+                                    />
                                     <View style={styles.modalItemDetails}>
                                         <Text style={styles.modalItemName}>{selectedItem.name}</Text>
                                         <Text style={styles.modalItemDescription}>
                                             {selectedItem.description}
                                         </Text>
+                                        <View style={styles.modalPriceContainer}>
+                                            {selectedItem.specialPrice && selectedItem.originalPrice ? (
+                                                <>
+                                                    <Text style={styles.modalOriginalPrice}>{selectedItem.originalPrice}</Text>
+                                                    <Text style={styles.modalSpecialPrice}>{selectedItem.specialPrice}</Text>
+                                                </>
+                                            ) : (
+                                                <Text style={styles.modalRegularPrice}>
+                                                    {getLowestPrice(selectedItem.sizes)}
+                                                </Text>
+                                            )}
+                                        </View>
                                     </View>
                                 </View>
 
-                                <Text style={styles.sizesTitle}>Available Sizes</Text>
-                                
-                                <ScrollView style={styles.sizesList}>
-                                    {selectedItem.sizes.map((sizeOption, index) => (
-                                        <TouchableOpacity
-                                            key={index}
-                                            style={styles.sizeOption}
-                                            onPress={() => addToCartWithSize(selectedItem, sizeOption)}
-                                        >
-                                            <View style={styles.sizeInfo}>
-                                                <Text style={styles.sizeLabel}>{sizeOption.size}</Text>
-                                                <Text style={styles.sizePrice}>{sizeOption.price}</Text>
-                                            </View>
-                                            <Ionicons name="chevron-forward" size={scaleFont(20)} color="#ccc" />
-                                        </TouchableOpacity>
-                                    ))}
-                                </ScrollView>
+                                <View style={styles.addToCartSection}>
+                                    <TouchableOpacity
+                                        style={styles.addToCartButton}
+                                        onPress={() => addToCartWithSize(selectedItem, selectedItem.sizes[0])}
+                                    >
+                                        <Text style={styles.addToCartButtonText}>
+                                            Add to Cart - {getLowestPrice(selectedItem.sizes)}
+                                        </Text>
+                                    </TouchableOpacity>
+                                </View>
                             </>
                         )}
                     </View>
                 </View>
             </Modal>
 
-            {/* Cart Summary (Floating) */}
             {cart.length > 0 && (
                 <View style={styles.cartSummary}>
                     <View style={styles.cartItemsPreview}>
@@ -488,7 +568,6 @@ const RestaurantDetailScreen = ({ navigation, route }) => {
                         <TouchableOpacity
                             style={styles.checkoutButton}
                             onPress={() => navigation.navigate('Cart', {
-                                cart: cart,
                                 restaurant: restaurant
                             })}
                         >
@@ -500,6 +579,7 @@ const RestaurantDetailScreen = ({ navigation, route }) => {
         </SafeAreaView>
     );
 };
+
 
 const styles = StyleSheet.create({
     container: {
@@ -546,6 +626,74 @@ const styles = StyleSheet.create({
         fontSize: scaleFont(10),
         color: '#fff',
         fontWeight: 'bold',
+    },
+    // Search Bar Styles
+    searchContainer: {
+        paddingHorizontal: responsiveWidth(5),
+        paddingTop: responsiveHeight(2),
+        paddingBottom: responsiveHeight(1),
+        backgroundColor: '#fff',
+    },
+    searchWrapper: {
+        position: 'relative',
+    },
+    searchInput: {
+        backgroundColor: '#f8f9fa',
+        paddingHorizontal: responsiveWidth(5),
+        paddingVertical: responsiveHeight(1.8),
+        borderRadius: responsiveWidth(4),
+        fontSize: scaleFont(16),
+        color: '#333',
+        borderWidth: 1,
+        borderColor: '#E6F7FF',
+        paddingRight: responsiveWidth(15),
+    },
+    searchIcon: {
+        position: 'absolute',
+        right: responsiveWidth(2.5),
+        top: responsiveHeight(1),
+        backgroundColor: '#0DCAF0',
+        width: responsiveWidth(10),
+        height: responsiveWidth(10),
+        borderRadius: responsiveWidth(5),
+        justifyContent: 'center',
+        alignItems: 'center',
+        elevation: 3,
+    },
+    clearButton: {
+        position: 'absolute',
+        right: responsiveWidth(2.5),
+        top: responsiveHeight(1),
+        backgroundColor: '#FF6B6B',
+        width: responsiveWidth(10),
+        height: responsiveWidth(10),
+        borderRadius: responsiveWidth(5),
+        justifyContent: 'center',
+        alignItems: 'center',
+        elevation: 3,
+    },
+    // Search Info Styles
+    searchInfoContainer: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingHorizontal: responsiveWidth(5),
+        paddingVertical: responsiveHeight(1),
+        backgroundColor: '#E6F7FF',
+    },
+    searchInfoText: {
+        fontSize: scaleFont(14),
+        color: '#0DCAF0',
+        fontWeight: '500',
+    },
+    clearSearchButton: {
+        paddingHorizontal: responsiveWidth(3),
+        paddingVertical: responsiveHeight(0.5),
+    },
+    clearSearchText: {
+        fontSize: scaleFont(12),
+        color: '#FF6B6B',
+        fontWeight: '600',
     },
     restaurantBanner: {
         height: responsiveHeight(25),
@@ -667,6 +815,21 @@ const styles = StyleSheet.create({
         height: '100%',
         resizeMode: 'cover',
     },
+    discountBadge: {
+        position: 'absolute',
+        top: responsiveHeight(1),
+        left: responsiveWidth(2),
+        backgroundColor: '#FF6B6B',
+        paddingHorizontal: responsiveWidth(2),
+        paddingVertical: responsiveHeight(0.5),
+        borderRadius: responsiveWidth(3),
+        zIndex: 2,
+    },
+    discountText: {
+        fontSize: scaleFont(9),
+        color: '#fff',
+        fontWeight: 'bold',
+    },
     ratingBadge: {
         position: 'absolute',
         top: responsiveHeight(1),
@@ -683,10 +846,20 @@ const styles = StyleSheet.create({
         color: '#0DCAF0',
         fontWeight: 'bold',
     },
+    specialBadge: {
+        position: 'absolute',
+        bottom: responsiveHeight(1),
+        left: responsiveWidth(2),
+        backgroundColor: 'rgba(255,215,0,0.95)',
+        padding: responsiveWidth(1),
+        borderRadius: responsiveWidth(2),
+        borderWidth: 1,
+        borderColor: '#FFD700',
+    },
     spicyBadge: {
         position: 'absolute',
-        top: responsiveHeight(1),
-        left: responsiveWidth(2),
+        bottom: responsiveHeight(1),
+        right: responsiveWidth(2),
         backgroundColor: 'rgba(255,255,255,0.95)',
         padding: responsiveWidth(1),
         borderRadius: responsiveWidth(2),
@@ -708,53 +881,30 @@ const styles = StyleSheet.create({
         marginBottom: responsiveHeight(1),
         lineHeight: scaleFont(14),
     },
-    sizesContainer: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        marginBottom: responsiveHeight(1),
-    },
-    sizeChip: {
-        backgroundColor: '#E6F7FF',
-        paddingHorizontal: responsiveWidth(2),
-        paddingVertical: responsiveHeight(0.5),
-        borderRadius: responsiveWidth(2),
-        marginRight: responsiveWidth(1),
-        marginBottom: responsiveHeight(0.5),
-    },
-    sizeChipText: {
-        fontSize: scaleFont(9),
-        color: '#0DCAF0',
-        fontWeight: '500',
-    },
-    moreSizesChip: {
-        backgroundColor: '#f8f9fa',
-        paddingHorizontal: responsiveWidth(2),
-        paddingVertical: responsiveHeight(0.5),
-        borderRadius: responsiveWidth(2),
-        marginBottom: responsiveHeight(0.5),
-    },
-    moreSizesText: {
-        fontSize: scaleFont(9),
-        color: '#666',
-        fontWeight: '500',
-    },
-    foodDetails: {
-        marginBottom: responsiveHeight(1),
-    },
     priceContainer: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
+        marginBottom: responsiveHeight(1),
     },
-    priceFrom: {
-        fontSize: scaleFont(10),
-        color: '#666',
+    originalPrice: {
+        fontSize: scaleFont(12),
+        color: '#718096',
+        textDecorationLine: 'line-through',
         marginBottom: responsiveHeight(0.25),
+    },
+    specialPrice: {
+        fontSize: scaleFont(16),
+        fontWeight: 'bold',
+        color: '#000',
     },
     foodPrice: {
         fontSize: scaleFont(16),
         fontWeight: 'bold',
         color: '#000',
+    },
+    foodDetails: {
+        marginBottom: responsiveHeight(1),
     },
     addButton: {
         backgroundColor: '#000',
@@ -785,7 +935,7 @@ const styles = StyleSheet.create({
         backgroundColor: '#fff',
         borderTopLeftRadius: responsiveWidth(6),
         borderTopRightRadius: responsiveWidth(6),
-        maxHeight: responsiveHeight(70),
+        maxHeight: responsiveHeight(50),
     },
     modalHeader: {
         flexDirection: 'row',
@@ -829,40 +979,41 @@ const styles = StyleSheet.create({
         fontSize: scaleFont(12),
         color: '#666',
         lineHeight: scaleFont(16),
+        marginBottom: responsiveHeight(1),
     },
-    sizesTitle: {
-        fontSize: scaleFont(16),
-        fontWeight: 'bold',
-        color: '#2D3748',
-        paddingHorizontal: responsiveWidth(5),
-        paddingTop: responsiveHeight(2),
-        paddingBottom: responsiveHeight(1),
-    },
-    sizesList: {
-        maxHeight: responsiveHeight(30),
-    },
-    sizeOption: {
+    modalPriceContainer: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
         alignItems: 'center',
-        paddingHorizontal: responsiveWidth(5),
-        paddingVertical: responsiveHeight(2),
-        borderBottomWidth: 1,
-        borderBottomColor: '#E6F7FF',
     },
-    sizeInfo: {
-        flex: 1,
-    },
-    sizeLabel: {
+    modalOriginalPrice: {
         fontSize: scaleFont(14),
-        fontWeight: '600',
-        color: '#2D3748',
-        marginBottom: responsiveHeight(0.5),
+        color: '#718096',
+        textDecorationLine: 'line-through',
+        marginRight: responsiveWidth(2),
     },
-    sizePrice: {
-        fontSize: scaleFont(16),
+    modalSpecialPrice: {
+        fontSize: scaleFont(18),
         fontWeight: 'bold',
-        color: '#0DCAF0',
+        color: '#000',
+    },
+    modalRegularPrice: {
+        fontSize: scaleFont(18),
+        fontWeight: 'bold',
+        color: '#000',
+    },
+    addToCartSection: {
+        padding: responsiveWidth(5),
+    },
+    addToCartButton: {
+        backgroundColor: '#000',
+        paddingVertical: responsiveHeight(2),
+        borderRadius: responsiveWidth(3),
+        alignItems: 'center',
+    },
+    addToCartButtonText: {
+        fontSize: scaleFont(16),
+        color: '#fff',
+        fontWeight: 'bold',
     },
     cartSummary: {
         position: 'absolute',
@@ -972,6 +1123,59 @@ const styles = StyleSheet.create({
         fontSize: scaleFont(14),
         color: '#999',
         textAlign: 'center',
+        marginBottom: responsiveHeight(2),
+    },
+    clearSearchFullButton: {
+        backgroundColor: '#0DCAF0',
+        paddingHorizontal: responsiveWidth(6),
+        paddingVertical: responsiveHeight(1.5),
+        borderRadius: responsiveWidth(3),
+    },
+    clearSearchFullButtonText: {
+        color: '#fff',
+        fontSize: scaleFont(14),
+        fontWeight: 'bold',
+    },
+    loadingContainer: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: responsiveHeight(10),
+    },
+    loadingText: {
+        fontSize: scaleFont(16),
+        color: '#666',
+        marginTop: responsiveHeight(2),
+    },
+    errorContainer: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: responsiveHeight(10),
+        paddingHorizontal: responsiveWidth(10),
+    },
+    errorText: {
+        fontSize: scaleFont(18),
+        fontWeight: 'bold',
+        color: '#FF6B6B',
+        textAlign: 'center',
+        marginTop: responsiveHeight(2),
+    },
+    errorSubText: {
+        fontSize: scaleFont(14),
+        color: '#666',
+        textAlign: 'center',
+        marginTop: responsiveHeight(1),
+        marginBottom: responsiveHeight(3),
+    },
+    retryButton: {
+        backgroundColor: '#0DCAF0',
+        paddingHorizontal: responsiveWidth(6),
+        paddingVertical: responsiveHeight(1.5),
+        borderRadius: responsiveWidth(3),
+    },
+    retryButtonText: {
+        color: '#fff',
+        fontSize: scaleFont(14),
+        fontWeight: 'bold',
     },
 });
 

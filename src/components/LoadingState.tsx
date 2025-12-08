@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { View, Text, ActivityIndicator, Image, StyleSheet, Dimensions, Pressable } from "react-native";
 
 const { width, height } = Dimensions.get("window");
@@ -6,26 +6,57 @@ const { width, height } = Dimensions.get("window");
 const LoadingState = ({
   message = "Loading please wait...",
   slogan = "Nthome ka petjana!",
-  showButton = false,
   buttonText = "Login",
   onButtonPress = () => {},
-}) => (
-  <View style={styles.loadingContainer}>
-    <View style={styles.logoWrapper}>
-      { !showButton && <ActivityIndicator size={100} color="#0DCAF0" style={styles.spinnerBehind} /> }
-      <Image source={require('../../assets/nthomeLogo.png')} style={styles.logo} />
+}) => {
+  const [showButton, setShowButton] = useState(false);
+  const [buttonLoading, setButtonLoading] = useState(true);
+
+  useEffect(() => {
+    // Show button after 10 seconds
+    const timer = setTimeout(() => {
+      setShowButton(true);
+
+      // After 2 seconds, stop button loading
+      setTimeout(() => {
+        setButtonLoading(false);
+      }, 2000);
+    }, 10000);
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  return (
+    <View style={styles.loadingContainer}>
+      <View style={styles.logoWrapper}>
+        {!showButton && (
+          <ActivityIndicator size={100} color="#0DCAF0" style={styles.spinnerBehind} />
+        )}
+        <Image source={require("../../assets/nthomeLogo.png")} style={styles.logo} />
+      </View>
+
+      <Text style={styles.loadingText_slogan}>{slogan}</Text>
+      <Text style={styles.loadingText}>{message}</Text>
+
+      {showButton && (
+        <Pressable
+          style={[
+            styles.button,
+            buttonLoading && { backgroundColor: "#7DD3FC" }, // faded bg when loading
+          ]}
+          disabled={buttonLoading}
+          onPress={onButtonPress}
+        >
+          {buttonLoading ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <Text style={styles.buttonText}>{buttonText}</Text>
+          )}
+        </Pressable>
+      )}
     </View>
-
-    <Text style={styles.loadingText_slogan}>{slogan}</Text>
-    <Text style={styles.loadingText}>{message}</Text>
-
-    {showButton && (
-      <Pressable style={styles.button} onPress={onButtonPress}>
-        <Text style={styles.buttonText}>{buttonText}</Text>
-      </Pressable>
-    )}
-  </View>
-);
+  );
+};
 
 export default LoadingState;
 

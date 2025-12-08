@@ -1,9 +1,11 @@
-// screens/CartScreen.js
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { GOOGLE_MAPS_APIKEY } from "@env"
+import {
+    GooglePlacesAutocomplete
+} from "react-native-google-places-autocomplete"
 import {
     View,
     Text,
-    ScrollView,
     Image,
     TextInput,
     TouchableOpacity,
@@ -17,26 +19,38 @@ import {
 } from 'react-native';
 import { Icon } from "react-native-elements"
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons"
-import { useSelector } from 'react-redux';
+import { useSelector, useDispatch } from 'react-redux';
+import { addToCart, removeFromCart, clearCart } from '../redux/actions/orderActions';
 import * as Location from 'expo-location';
+import { api } from '../../api';
 
 const { width, height } = Dimensions.get('window');
 
-// Responsive sizing functions
 const responsiveWidth = (percentage) => (width * percentage) / 100;
 const responsiveHeight = (percentage) => (height * percentage) / 100;
 const scaleFont = (size) => (width / 375) * size;
 
 const CartScreen = ({ navigation, route }) => {
-    const { cart: initialCart, restaurant } = route.params || {};
-    const [cart, setCart] = useState(initialCart || []);
+    const { restaurant } = route.params || {};
     const [deliveryAddress, setDeliveryAddress] = useState('');
     const [specialInstructions, setSpecialInstructions] = useState('');
     const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('card');
     const [isLoadingLocation, setIsLoadingLocation] = useState(false);
-    const user = useSelector((state) => state.auth.user);
+    const [addressDetails, setAddressDetails] = useState(null);
+    const [isManualAddress, setIsManualAddress] = useState(false);
+    const [isPlacingOrder, setIsPlacingOrder] = useState(false);
+    const [orderType, setOrderType] = useState('delivery'); // 'delivery' or 'collection'
 
-    // Mamelodi Shop Names Data
+    const user = useSelector((state) => state.auth.user);
+    const cart = useSelector((state) => state.order.cart);
+    const dispatch = useDispatch();
+    const placesRef = useRef(null);
+    const manualInputRef = useRef(null);
+
+    useEffect(() => {
+        console.log("🛒 Cart Updated:", cart);
+    }, [cart]);
+
     const mamelodiShops = [
         {
             id: 1,
@@ -44,7 +58,8 @@ const CartScreen = ({ navigation, route }) => {
             category: 'Fast Food',
             image: require('../../assets/nthomeFood_images/kfc.jpg'),
             rating: 4.2,
-            deliveryTime: '20-30 min'
+            deliveryTime: '20-30 min',
+            address: '123 Mamelodi Street, Mamelodi'
         },
         {
             id: 2,
@@ -52,67 +67,22 @@ const CartScreen = ({ navigation, route }) => {
             category: 'Fast Food',
             image: require('../../assets/nthomeFood_images/chicken-licken.jpg'),
             rating: 4.0,
-            deliveryTime: '25-35 min'
+            deliveryTime: '25-35 min',
+            address: '456 Mamelodi Road, Mamelodi'
         },
-        {
-            id: 3,
-            name: 'Debonairs Pizza',
-            category: 'Pizza',
-            image: require('../../assets/nthomeFood_images/debonairs.png'),
-            rating: 4.3,
-            deliveryTime: '30-40 min'
-        },
-        {
-            id: 4,
-            name: 'Nandos',
-            category: 'Grill',
-            image: require('../../assets/nthomeFood_images/nandos.png'),
-            rating: 4.1,
-            deliveryTime: '35-45 min'
-        },
-        {
-            id: 5,
-            name: 'Steers',
-            category: 'Burgers',
-            image: require('../../assets/nthomeFood_images/steers.jpg'),
-            rating: 4.4,
-            deliveryTime: '25-35 min'
-        },
-        {
-            id: 6,
-            name: 'Fish & Chips Co',
-            category: 'Seafood',
-            image: require('../../assets/nthomeFood_images/fish-chips.png'),
-            rating: 4.2,
-            deliveryTime: '20-30 min'
-        },
-        {
-            id: 7,
-            name: 'Mochachos',
-            category: 'Mexican',
-            image: require('../../assets/nthomeFood_images/mochachos.jpg'),
-            rating: 4.0,
-            deliveryTime: '30-40 min'
-        },
-        {
-            id: 8,
-            name: 'Romans Pizza',
-            category: 'Pizza',
-            image: require('../../assets/nthomeFood_images/romans.png'),
-            rating: 4.1,
-            deliveryTime: '35-45 min'
-        }
+        // ... other shops with address property
     ];
 
-    // Update the price calculation to handle special items
+    // Calculate totals based on order type
     const { subtotal, deliveryFee, tax, total } = useMemo(() => {
         const subtotal = cart.reduce((sum, item) => {
             const price = parseInt(item.price.replace('R', '').trim());
             return sum + (price * item.quantity);
         }, 0);
 
-        const deliveryFee = 25; // Fixed delivery fee
-        const tax = subtotal * 0.15; // 15% tax
+        // No delivery fee for collection orders
+        const deliveryFee = orderType === 'delivery' ? 25 : 0;
+        const tax = subtotal * 0.15;
         const total = subtotal + deliveryFee + tax;
 
         return {
@@ -121,14 +91,35 @@ const CartScreen = ({ navigation, route }) => {
             tax: Math.round(tax),
             total: Math.round(total)
         };
-    }, [cart]);
+    }, [cart, orderType]);
 
-    // Function to get current location
+    // Function to create order in database
+    const createOrderInDatabase = async (orderData) => {
+        try {
+            const response = await fetch(`${api}/food-orders`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(orderData),
+            });
+
+            if (!response.ok) {
+                throw new Error(`Failed to create order: ${response.status}`);
+            }
+
+            const result = await response.json();
+            return result;
+        } catch (error) {
+            console.error('Error creating order:', error);
+            throw error;
+        }
+    };
+
     const getCurrentLocation = async () => {
         setIsLoadingLocation(true);
 
         try {
-            // Request permission
             let { status } = await Location.requestForegroundPermissionsAsync();
 
             if (status !== 'granted') {
@@ -141,7 +132,6 @@ const CartScreen = ({ navigation, route }) => {
                 return;
             }
 
-            // Get current position
             let location = await Location.getCurrentPositionAsync({
                 accuracy: Location.Accuracy.High,
             });
@@ -158,23 +148,21 @@ const CartScreen = ({ navigation, route }) => {
 
                 if (formattedAddress) {
                     setDeliveryAddress(formattedAddress);
-                    Alert.alert(
-                        "Location Found",
-                        "Your current address has been filled automatically.",
-                        [{ text: "OK" }]
-                    );
-                } else {
-                    throw new Error('Could not format address');
+                    setIsManualAddress(true);
+                    setAddressDetails({
+                        formattedAddress: formattedAddress,
+                        latitude: location.coords.latitude,
+                        longitude: location.coords.longitude,
+                        isCurrentLocation: true
+                    });
                 }
-            } else {
-                throw new Error('No address found for this location');
             }
 
         } catch (error) {
             console.error('Error getting location:', error);
             Alert.alert(
                 "Location Error",
-                "Unable to get your current location. Please make sure location services are enabled and try again, or enter your address manually.",
+                "Unable to get your current location. Please make sure location services are enabled and try again.",
                 [{ text: "OK" }]
             );
         } finally {
@@ -182,127 +170,157 @@ const CartScreen = ({ navigation, route }) => {
         }
     };
 
-    // In CartScreen.js - Update the cart management functions
-
-    // Add item to cart with proper identification
-    const addToCart = (item) => {
-        setCart(prevCart => {
-            const existingItemIndex = prevCart.findIndex(cartItem =>
-                cartItem.id === item.id &&
-                cartItem.restaurantId === item.restaurantId
-            );
-
-            if (existingItemIndex !== -1) {
-                return prevCart.map((cartItem, index) =>
-                    index === existingItemIndex
-                        ? { ...cartItem, quantity: cartItem.quantity + 1 }
-                        : cartItem
-                );
-            } else {
-                return [...prevCart, { ...item, quantity: 1 }];
-            }
-        });
+    const handlePlaceSelected = (data, details = null) => {
+        if (details) {
+            const address = details.formatted_address;
+            setDeliveryAddress(address);
+            setIsManualAddress(false);
+            setAddressDetails({
+                formattedAddress: address,
+                latitude: details.geometry.location.lat,
+                longitude: details.geometry.location.lng,
+                placeId: details.place_id,
+                name: details.name,
+                addressComponents: details.address_components
+            });
+        }
     };
 
-    // Remove item from cart
-    const removeFromCart = (item) => {
-        setCart(prevCart => {
-            const existingItemIndex = prevCart.findIndex(cartItem =>
-                cartItem.id === item.id &&
-                cartItem.restaurantId === item.restaurantId
-            );
-
-            if (existingItemIndex !== -1) {
-                const existingItem = prevCart[existingItemIndex];
-                if (existingItem.quantity > 1) {
-                    return prevCart.map((cartItem, index) =>
-                        index === existingItemIndex
-                            ? { ...cartItem, quantity: cartItem.quantity - 1 }
-                            : cartItem
-                    );
-                } else {
-                    return prevCart.filter((_, index) => index !== existingItemIndex);
-                }
-            }
-            return prevCart;
-        });
+    const handleManualAddressChange = (text) => {
+        setDeliveryAddress(text);
+        setIsManualAddress(true);
+        setAddressDetails(null);
     };
 
-    // Remove item completely from cart
-    const removeItemCompletely = (item) => {
-        setCart(prevCart => prevCart.filter(cartItem =>
-            !(cartItem.id === item.id && cartItem.restaurantId === item.restaurantId)
-        ));
+    const switchToAutocomplete = () => {
+        setIsManualAddress(false);
+        setDeliveryAddress('');
+        setAddressDetails(null);
     };
 
-    // Clear entire cart
-    const clearCart = () => {
+    const handleAddToCart = (item) => {
+        dispatch(addToCart({ ...item, quantity: 1 }));
+    };
+
+    const handleRemoveFromCart = (cartId) => {
+        dispatch(removeFromCart(cartId));
+    };
+
+    const handleRemoveItemCompletely = (item) => {
+        dispatch(removeFromCart(item.cartId));
+    };
+
+    const handleClearCart = () => {
         Alert.alert(
             "Clear Cart",
             "Are you sure you want to remove all items from your cart?",
             [
                 { text: "Cancel", style: "cancel" },
-                { text: "Clear", style: "destructive", onPress: () => setCart([]) }
+                { text: "Clear", style: "destructive", onPress: () => dispatch(clearCart()) }
             ]
         );
     };
 
-    // Update the placeOrder function to show restaurant information
-
-    const placeOrder = () => {
+    const placeOrder = async () => {
         if (cart.length === 0) {
             Alert.alert("Empty Cart", "Please add some items to your cart before placing an order.");
             return;
         }
 
-        if (!deliveryAddress.trim()) {
+        // Validate delivery address only for delivery orders
+        if (orderType === 'delivery' && !deliveryAddress.trim()) {
             Alert.alert("Delivery Address", "Please enter your delivery address.");
             return;
         }
 
         const restaurantNames = [...new Set(cart.map(item => item.restaurant))];
+        const restaurantIds = [...new Set(cart.map(item => item.restaurantId))];
         const restaurantText = restaurantNames.length === 1
             ? `from ${restaurantNames[0]}`
             : `from ${restaurantNames.length} different restaurants`;
 
+        const orderTypeText = orderType === 'delivery' ? 'Delivery' : 'Collection';
+        const addressText = orderType === 'delivery' ? `\nDelivery to: ${deliveryAddress}` : `\nCollection from: ${restaurant?.name || restaurantNames[0]}`;
+
         Alert.alert(
             "Confirm Order",
-            `Are you ready to place your order for R${total} ${restaurantText}?`,
+            `Are you ready to place your ${orderTypeText.toLowerCase()} order for R${total} ${restaurantText}?${addressText}`,
             [
                 { text: "Cancel", style: "cancel" },
                 {
                     text: "Place Order",
                     style: "default",
-                    onPress: () => {
-                        console.log('Order placed:', {
-                            restaurants: restaurantsInCart,
-                            items: cart,
-                            deliveryAddress,
-                            specialInstructions,
-                            paymentMethod: selectedPaymentMethod,
-                            total
-                        });
+                    onPress: async () => {
+                        setIsPlacingOrder(true);
 
-                        Alert.alert(
-                            "Order Placed!",
-                            `Your order ${restaurantText} has been placed successfully. You will receive a confirmation shortly.`,
-                            [
-                                {
-                                    text: "OK",
-                                    onPress: () => {
-                                        setCart([]);
-                                        navigation.navigate('NthomeFoodLanding');
+                        try {
+                            // Prepare order data for API
+                            const orderData = {
+                                user_id: user?.user_id || 1,
+                                customer_name: user?.name || 'Customer',
+                                customer_phone: user?.phoneNumber || '',
+                                customer_email: user?.email || '',
+                                delivery_address: orderType === 'delivery' ? deliveryAddress : (restaurant?.address || 'Collection'),
+                                order_type: orderType,
+                                restaurant_id: restaurantIds[0] || restaurant?.id, // Include restaurant ID
+                                // restaurant_name: restaurantNames[0] || restaurant?.name,
+                                items: cart.map(item => ({
+                                    menu_item_id: item.id,
+                                    item_name: item.name,
+                                    quantity: item.quantity,
+                                    unit_price: parseInt(item.price.replace('R', '').trim()),
+                                    special_instructions: item.specialInstructions || '',
+                                    restaurant_id: item.restaurantId // Include restaurant ID for each item
+                                })),
+                                special_instructions: specialInstructions,
+                                payment_method: selectedPaymentMethod
+                            };
+
+                            console.log('Sending order data:', orderData);
+
+                            // Create order in database
+                            const createdOrder = await createOrderInDatabase(orderData);
+
+                            console.log('Order created successfully:', createdOrder);
+
+                            // Success alert
+                            Alert.alert(
+                                "Order Placed!",
+                                `Your ${orderTypeText.toLowerCase()} order ${restaurantText} has been placed successfully.\n\nOrder Number: ${createdOrder.order_number}\nYou will receive a confirmation shortly.`,
+                                [
+                                    {
+                                        text: "Track Order",
+                                        onPress: () => {
+                                            dispatch(clearCart());
+                                            setIsPlacingOrder(false);
+                                            navigation.navigate('OrderTracking', {
+                                                orderId: createdOrder.id,
+                                                orderNumber: createdOrder.order_number,
+                                                customerId: user?.user_id
+                                            });
+                                        }
                                     }
-                                }
-                            ]
-                        );
+                                ]
+                            );
+
+                        } catch (error) {
+                            console.error('Error placing order:', error);
+                            setIsPlacingOrder(false);
+
+                            Alert.alert(
+                                "Order Failed",
+                                "There was an error placing your order. Please try again.",
+                                [
+                                    { text: "OK" }
+                                ]
+                            );
+                        }
                     }
                 }
             ]
         );
     };
 
-    // Group items by restaurant for mixed cart
     const restaurantsInCart = useMemo(() => {
         const restaurants = {};
         cart.forEach(item => {
@@ -316,16 +334,13 @@ const CartScreen = ({ navigation, route }) => {
         return Object.values(restaurants);
     }, [cart]);
 
-    // If cart has items from multiple restaurants, show a different header
     const hasMultipleRestaurants = restaurantsInCart.length > 1;
 
-    // Update the renderCartItem to handle the unique key
     const renderCartItem = ({ item }) => (
         <View style={styles.cartItem}>
             <Image source={item.image} style={styles.cartItemImage} />
 
             <View style={styles.cartItemInfo}>
-                {/* Shop Name */}
                 <TouchableOpacity
                     style={styles.shopNameContainer}
                     onPress={() => {
@@ -343,7 +358,6 @@ const CartScreen = ({ navigation, route }) => {
 
                 <Text style={styles.cartItemName}>{item.name}</Text>
 
-                {/* Show special badge if it's a special item */}
                 {item.isSpecial && (
                     <View style={styles.specialBadge}>
                         <Ionicons name="flash" size={scaleFont(12)} color="#FFD700" />
@@ -355,7 +369,6 @@ const CartScreen = ({ navigation, route }) => {
                     {item.description}
                 </Text>
 
-                {/* Show original price if it's a special item */}
                 {item.isSpecial && item.specialDetails ? (
                     <View style={styles.specialPriceContainer}>
                         <Text style={styles.originalPrice}>
@@ -375,7 +388,7 @@ const CartScreen = ({ navigation, route }) => {
                 <View style={styles.quantityControls}>
                     <TouchableOpacity
                         style={styles.quantityButton}
-                        onPress={() => removeFromCart(item)}
+                        onPress={() => handleRemoveFromCart(item.cartId)}
                     >
                         <Text style={styles.quantityButtonText}>-</Text>
                     </TouchableOpacity>
@@ -384,7 +397,7 @@ const CartScreen = ({ navigation, route }) => {
 
                     <TouchableOpacity
                         style={styles.quantityButton}
-                        onPress={() => addToCart(item)}
+                        onPress={() => handleAddToCart(item)}
                     >
                         <Text style={styles.quantityButtonText}>+</Text>
                     </TouchableOpacity>
@@ -392,7 +405,7 @@ const CartScreen = ({ navigation, route }) => {
 
                 <TouchableOpacity
                     style={styles.removeButton}
-                    onPress={() => removeItemCompletely(item)}
+                    onPress={() => handleRemoveItemCompletely(item)}
                 >
                     <Ionicons name="trash-outline" size={scaleFont(18)} color="#FF6B6B" />
                 </TouchableOpacity>
@@ -400,234 +413,406 @@ const CartScreen = ({ navigation, route }) => {
         </View>
     );
 
+    const renderRestaurantChip = ({ item, index }) => (
+        <View key={index} style={styles.restaurantChip}>
+            <Ionicons name="restaurant" size={scaleFont(12)} color="#0DCAF0" />
+            <Text style={styles.restaurantChipText}>{item.name}</Text>
+            <Text style={styles.restaurantItemCount}>({item.items.length})</Text>
+        </View>
+    );
+
+    const CartItemsSection = () => (
+        <View style={styles.cartSection}>
+            <Text style={styles.sectionTitle}>
+                Order Items {cart.length > 0 && `(${cart.length})`}
+            </Text>
+
+            {cart.length === 0 ? (
+                <View style={styles.emptyCart}>
+                    <Ionicons name="cart-outline" size={scaleFont(64)} color="#ccc" />
+                    <Text style={styles.emptyCartTitle}>Your cart is empty</Text>
+                    <Text style={styles.emptyCartText}>
+                        Add some delicious items from the menu
+                    </Text>
+                    <TouchableOpacity
+                        style={styles.browseButton}
+                        onPress={() => navigation.goBack()}
+                    >
+                        <Text style={styles.browseButtonText}>Browse Menu</Text>
+                    </TouchableOpacity>
+                </View>
+            ) : (
+                <FlatList
+                    data={cart}
+                    renderItem={renderCartItem}
+                    keyExtractor={(item) => item.cartId}
+                    scrollEnabled={false}
+                    showsVerticalScrollIndicator={false}
+                />
+            )}
+        </View>
+    );
 
     return (
         <SafeAreaView style={styles.container}>
             <StatusBar barStyle="dark-content" backgroundColor="#fff" />
 
-            {/* Header */}
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
                     <Ionicons name="arrow-back" size={scaleFont(24)} color="#333" />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Your Cart</Text>
                 {cart.length > 0 && (
-                    <TouchableOpacity onPress={clearCart} style={styles.clearButton}>
+                    <TouchableOpacity onPress={handleClearCart} style={styles.clearButton}>
                         <Text style={styles.clearButtonText}>Clear All</Text>
                     </TouchableOpacity>
                 )}
             </View>
 
-            <ScrollView
-                showsVerticalScrollIndicator={false}
-                contentContainerStyle={styles.scrollContent}
-            >
-
-                {/* Restaurant Info - Show differently for mixed cart */}
-                {restaurant && !hasMultipleRestaurants ? (
-                    <View style={styles.restaurantSection}>
-                        <View style={styles.restaurantHeader}>
-                            <Image source={restaurant.image} style={styles.restaurantImage} />
-                            <View style={styles.restaurantInfo}>
-                                <Text style={styles.restaurantName}>{restaurant.name}</Text>
-                                <Text style={styles.restaurantCategory}>{restaurant.category}</Text>
-                                <View style={styles.restaurantDetails}>
-                                    <View style={styles.detailItem}>
-                                        <Ionicons name="star" size={scaleFont(12)} color="#FFD700" />
-                                        <Text style={styles.detailText}>{restaurant.rating}</Text>
-                                    </View>
-                                    <View style={styles.detailItem}>
-                                        <Ionicons name="time-outline" size={scaleFont(12)} color="#666" />
-                                        <Text style={styles.detailText}>{restaurant.deliveryTime}</Text>
+            <FlatList
+                data={[{ key: 'content' }]}
+                renderItem={({ item }) => (
+                    <View style={styles.scrollContent}>
+                        {restaurant && !hasMultipleRestaurants ? (
+                            <View style={styles.restaurantSection}>
+                                <View style={styles.restaurantHeader}>
+                                    <Image source={restaurant.image} style={styles.restaurantImage} />
+                                    <View style={styles.restaurantInfo}>
+                                        <Text style={styles.restaurantName}>{restaurant.name}</Text>
+                                        <Text style={styles.restaurantCategory}>{restaurant.category}</Text>
+                                        <View style={styles.restaurantDetails}>
+                                            <View style={styles.detailItem}>
+                                                <Ionicons name="star" size={scaleFont(12)} color="#FFD700" />
+                                                <Text style={styles.detailText}>{restaurant.rating}</Text>
+                                            </View>
+                                            <View style={styles.detailItem}>
+                                                <Ionicons name="time-outline" size={scaleFont(12)} color="#666" />
+                                                <Text style={styles.detailText}>{restaurant.deliveryTime}</Text>
+                                            </View>
+                                        </View>
+                                        {restaurant.address && (
+                                            <Text style={styles.restaurantAddress}>{restaurant.address}</Text>
+                                        )}
                                     </View>
                                 </View>
                             </View>
-                        </View>
-                    </View>
-                ) : hasMultipleRestaurants ? (
-                    <View style={styles.multipleRestaurantsSection}>
-                        <Text style={styles.sectionTitle}>Order from {restaurantsInCart.length} Restaurants</Text>
-                        <ScrollView
-                            horizontal
-                            showsHorizontalScrollIndicator={false}
-                            style={styles.restaurantsScroll}
-                        >
-                            {restaurantsInCart.map((restaurant, index) => (
-                                <View key={index} style={styles.restaurantChip}>
-                                    <Ionicons name="restaurant" size={scaleFont(12)} color="#0DCAF0" />
-                                    <Text style={styles.restaurantChipText}>{restaurant.name}</Text>
-                                    <Text style={styles.restaurantItemCount}>({restaurant.items.length})</Text>
+                        ) : hasMultipleRestaurants ? (
+                            <View style={styles.multipleRestaurantsSection}>
+                                <Text style={styles.sectionTitle}>Order from {restaurantsInCart.length} Restaurants</Text>
+                                <FlatList
+                                    data={restaurantsInCart}
+                                    renderItem={renderRestaurantChip}
+                                    keyExtractor={(item, index) => `restaurant-${index}`}
+                                    horizontal
+                                    showsHorizontalScrollIndicator={false}
+                                    style={styles.restaurantsScroll}
+                                />
+                            </View>
+                        ) : null}
+
+                        <CartItemsSection />
+
+                        {/* Order Type Selection */}
+                        {cart.length > 0 && (
+                            <View style={styles.orderTypeSection}>
+                                <Text style={styles.sectionTitle}>Order Type</Text>
+                                <View style={styles.orderTypeOptions}>
+                                    <TouchableOpacity
+                                        style={[
+                                            styles.orderTypeOption,
+                                            orderType === 'delivery' && styles.orderTypeOptionSelected
+                                        ]}
+                                        onPress={() => setOrderType('delivery')}
+                                    >
+                                        <Ionicons
+                                            name={orderType === 'delivery' ? "car" : "car-outline"}
+                                            size={scaleFont(20)}
+                                            color={orderType === 'delivery' ? "#0DCAF0" : "#666"}
+                                        />
+                                        <Text style={[
+                                            styles.orderTypeText,
+                                            orderType === 'delivery' && styles.orderTypeTextSelected
+                                        ]}>
+                                            Delivery
+                                        </Text>
+                                        {orderType === 'delivery' && (
+                                            <Text style={styles.deliveryFeeText}>+R{deliveryFee}</Text>
+                                        )}
+                                    </TouchableOpacity>
+
+                                    <TouchableOpacity
+                                        style={[
+                                            styles.orderTypeOption,
+                                            orderType === 'collection' && styles.orderTypeOptionSelected
+                                        ]}
+                                        onPress={() => setOrderType('collection')}
+                                    >
+                                        <Ionicons
+                                            name={orderType === 'collection' ? "storefront" : "storefront-outline"}
+                                            size={scaleFont(20)}
+                                            color={orderType === 'collection' ? "#0DCAF0" : "#666"}
+                                        />
+                                        <Text style={[
+                                            styles.orderTypeText,
+                                            orderType === 'collection' && styles.orderTypeTextSelected
+                                        ]}>
+                                            Collection
+                                        </Text>
+                                        {orderType === 'collection' && (
+                                            <Text style={styles.collectionSaveText}>Save R{deliveryFee}</Text>
+                                        )}
+                                    </TouchableOpacity>
                                 </View>
-                            ))}
-                        </ScrollView>
-                    </View>
-                ) : null}
+                            </View>
+                        )}
 
-                {/* Cart Items */}
-                <View style={styles.cartSection}>
-                    <Text style={styles.sectionTitle}>
-                        Order Items {cart.length > 0 && `(${cart.length})`}
-                    </Text>
+                        {/* Delivery Address Section - Only show for delivery orders */}
+                        {cart.length > 0 && orderType === 'delivery' && (
+                            <View style={styles.addressSection}>
+                                <View style={styles.addressHeader}>
+                                    <Text style={styles.sectionTitle}>Delivery Address</Text>
+                                    <TouchableOpacity
+                                        style={styles.locationButton}
+                                        onPress={getCurrentLocation}
+                                        disabled={isLoadingLocation}
+                                    >
+                                        {isLoadingLocation ? (
+                                            <ActivityIndicator size="small" color="#0DCAF0" />
+                                        ) : (
+                                            <Ionicons name="navigate" size={scaleFont(18)} color="#0DCAF0" />
+                                        )}
+                                        <Text style={styles.locationButtonText}>
+                                            {isLoadingLocation ? 'Getting Location...' : 'Use Current Location'}
+                                        </Text>
+                                    </TouchableOpacity>
+                                </View>
 
-                    {cart.length === 0 ? (
-                        <View style={styles.emptyCart}>
-                            <Ionicons name="cart-outline" size={scaleFont(64)} color="#ccc" />
-                            <Text style={styles.emptyCartTitle}>Your cart is empty</Text>
-                            <Text style={styles.emptyCartText}>
-                                Add some delicious items from the menu
-                            </Text>
-                            <TouchableOpacity
-                                style={styles.browseButton}
-                                onPress={() => navigation.goBack()}
-                            >
-                                <Text style={styles.browseButtonText}>Browse Menu</Text>
-                            </TouchableOpacity>
-                        </View>
-                    ) : (
-                        <FlatList
-                            data={cart}
-                            renderItem={renderCartItem}
-                            keyExtractor={(item) => `${item.id}-${item.restaurantId}-${item.isSpecial ? 'special' : 'regular'}`}
-                            scrollEnabled={false}
-                            showsVerticalScrollIndicator={false}
-                        />
-                    )}
-                </View>
+                                <View style={styles.addressInputContainer}>
+                                    {!isManualAddress ? (
+                                        <>
+                                            <GooglePlacesAutocomplete
+                                                ref={placesRef}
+                                                placeholder="Search for your address..."
+                                                onPress={handlePlaceSelected}
+                                                query={{
+                                                    key: GOOGLE_MAPS_APIKEY,
+                                                    language: 'en',
+                                                    components: 'country:za',
+                                                }}
+                                                styles={{
+                                                    textInputContainer: styles.placesTextInputContainer,
+                                                    textInput: styles.placesTextInput,
+                                                    listView: styles.placesListView,
+                                                    description: styles.placesDescription,
+                                                    poweredContainer: styles.placesPoweredContainer,
+                                                }}
+                                                fetchDetails={true}
+                                                enablePoweredByContainer={false}
+                                                debounce={400}
+                                                minLength={2}
+                                                nearbyPlacesAPI="GooglePlacesSearch"
+                                                listViewDisplayed="auto"
+                                                renderLeftButton={() => (
+                                                    <View style={styles.placesLeftButton}>
+                                                        <Ionicons name="search-outline" size={scaleFont(20)} color="#0DCAF0" />
+                                                    </View>
+                                                )}
+                                                textInputProps={{
+                                                    placeholderTextColor: '#999',
+                                                    returnKeyType: 'search',
+                                                }}
+                                                predefinedPlaces={[
+                                                    {
+                                                        description: 'Current Location',
+                                                        geometry: { location: { lat: 0, lng: 0 } },
+                                                    },
+                                                ]}
+                                                currentLocation={false}
+                                                currentLocationLabel="Current location"
+                                            />
+                                            <TouchableOpacity
+                                                style={styles.switchToManualButton}
+                                                onPress={() => setIsManualAddress(true)}
+                                            >
+                                                <Text style={styles.switchToManualText}>
+                                                    Or enter address manually
+                                                </Text>
+                                            </TouchableOpacity>
+                                        </>
+                                    ) : (
+                                        <View style={styles.manualInputContainer}>
+                                            <View style={styles.manualInputWrapper}>
+                                                <Ionicons name="location-outline" size={scaleFont(20)} color="#0DCAF0" />
+                                                <TextInput
+                                                    ref={manualInputRef}
+                                                    style={styles.manualAddressInput}
+                                                    placeholder="Enter your delivery address"
+                                                    placeholderTextColor="#999"
+                                                    value={deliveryAddress}
+                                                    onChangeText={handleManualAddressChange}
+                                                    multiline
+                                                    numberOfLines={2}
+                                                    autoFocus={true}
+                                                />
+                                            </View>
+                                            <TouchableOpacity
+                                                style={styles.switchToAutocompleteButton}
+                                                onPress={switchToAutocomplete}
+                                            >
+                                                <Text style={styles.switchToAutocompleteText}>
+                                                    Use address search instead
+                                                </Text>
+                                            </TouchableOpacity>
+                                        </View>
+                                    )}
+                                </View>
+                            </View>
+                        )}
 
-                {/* Delivery Address */}
-                {cart.length > 0 && (
-                    <View style={styles.addressSection}>
-                        <View style={styles.addressHeader}>
-                            <Text style={styles.sectionTitle}>Delivery Address</Text>
-                            <TouchableOpacity
-                                style={styles.locationButton}
-                                onPress={getCurrentLocation}
-                                disabled={isLoadingLocation}
-                            >
-                                {isLoadingLocation ? (
-                                    <ActivityIndicator size="small" color="#0DCAF0" />
-                                ) : (
-                                    <Ionicons name="navigate" size={scaleFont(18)} color="#0DCAF0" />
+                        {/* Collection Info Section - Only show for collection orders */}
+                        {cart.length > 0 && orderType === 'collection' && (
+                            <View style={styles.collectionSection}>
+                                <Text style={styles.sectionTitle}>Collection Information</Text>
+                                <View style={styles.collectionInfo}>
+                                    <Ionicons name="storefront" size={scaleFont(24)} color="#0DCAF0" />
+                                    <View style={styles.collectionDetails}>
+                                        <Text style={styles.collectionTitle}>Collect from Restaurant</Text>
+                                        <Text style={styles.collectionText}>
+                                            {restaurant ? `Collect your order from ${restaurant.name}` : 'Collect your order from the restaurant'}
+                                        </Text>
+                                        {restaurant?.address && (
+                                            <Text style={styles.collectionAddress}>
+                                                <Ionicons name="location" size={scaleFont(12)} color="#666" />
+                                                {restaurant.address}
+                                            </Text>
+                                        )}
+                                        <Text style={styles.collectionNote}>
+                                            You'll receive a notification when your order is ready for collection.
+                                        </Text>
+                                    </View>
+                                </View>
+                            </View>
+                        )}
+
+                        {cart.length > 0 && (
+                            <View style={styles.instructionsSection}>
+                                <Text style={styles.sectionTitle}>Special Instructions</Text>
+                                <TextInput
+                                    style={styles.instructionsInput}
+                                    placeholder="Any special instructions for the restaurant?"
+                                    placeholderTextColor="#999"
+                                    value={specialInstructions}
+                                    onChangeText={setSpecialInstructions}
+                                    multiline
+                                    numberOfLines={3}
+                                />
+                            </View>
+                        )}
+
+                        {cart.length > 0 && (
+                            <View style={styles.paymentSection}>
+                                <Text style={styles.sectionTitle}>Payment Method</Text>
+                                <View style={styles.paymentOptions}>
+                                    <TouchableOpacity
+                                        style={[
+                                            styles.paymentOption,
+                                            selectedPaymentMethod === 'card' && styles.paymentOptionSelected
+                                        ]}
+                                        onPress={() => setSelectedPaymentMethod('card')}
+                                    >
+                                        <Ionicons
+                                            name={selectedPaymentMethod === 'card' ? "card" : "card-outline"}
+                                            size={scaleFont(20)}
+                                            color={selectedPaymentMethod === 'card' ? "#0DCAF0" : "#666"}
+                                        />
+                                        <Text style={[
+                                            styles.paymentOptionText,
+                                            selectedPaymentMethod === 'card' && styles.paymentOptionTextSelected
+                                        ]}>
+                                            Credit/Debit Card
+                                        </Text>
+                                    </TouchableOpacity>
+
+                                    <TouchableOpacity
+                                        style={[
+                                            styles.paymentOption,
+                                            selectedPaymentMethod === 'cash' && styles.paymentOptionSelected
+                                        ]}
+                                        onPress={() => setSelectedPaymentMethod('cash')}
+                                    >
+                                        <Ionicons
+                                            name={selectedPaymentMethod === 'cash' ? "cash" : "cash-outline"}
+                                            size={scaleFont(20)}
+                                            color={selectedPaymentMethod === 'cash' ? "#0DCAF0" : "#666"}
+                                        />
+                                        <Text style={[
+                                            styles.paymentOptionText,
+                                            selectedPaymentMethod === 'cash' && styles.paymentOptionTextSelected
+                                        ]}>
+                                            {orderType === 'delivery' ? 'Cash on Delivery' : 'Pay at Collection'}
+                                        </Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+                        )}
+
+                        {cart.length > 0 && (
+                            <View style={styles.summarySection}>
+                                <Text style={styles.sectionTitle}>Order Summary</Text>
+                                <View style={styles.summaryRow}>
+                                    <Text style={styles.summaryLabel}>Subtotal</Text>
+                                    <Text style={styles.summaryValue}>R{subtotal}</Text>
+                                </View>
+                                {orderType === 'delivery' && (
+                                    <View style={styles.summaryRow}>
+                                        <Text style={styles.summaryLabel}>Delivery Fee</Text>
+                                        <Text style={styles.summaryValue}>R{deliveryFee}</Text>
+                                    </View>
                                 )}
-                                <Text style={styles.locationButtonText}>
-                                    {isLoadingLocation ? 'Getting Location...' : 'Use Current Location'}
-                                </Text>
-                            </TouchableOpacity>
-                        </View>
-                        <View style={styles.addressInputContainer}>
-                            <Ionicons name="location-outline" size={scaleFont(20)} color="#0DCAF0" />
-                            <TextInput
-                                style={styles.addressInput}
-                                placeholder="Enter your delivery address"
-                                placeholderTextColor="#999"
-                                value={deliveryAddress}
-                                onChangeText={setDeliveryAddress}
-                                multiline
-                            />
-                        </View>
+                                <View style={styles.summaryRow}>
+                                    <Text style={styles.summaryLabel}>Tax (15%)</Text>
+                                    <Text style={styles.summaryValue}>R{tax}</Text>
+                                </View>
+                                <View style={[styles.summaryRow, styles.totalRow]}>
+                                    <Text style={styles.totalLabel}>Total</Text>
+                                    <Text style={styles.totalValue}>R{total}</Text>
+                                </View>
+                                {orderType === 'collection' && (
+                                    <View style={styles.collectionSavings}>
+                                        <Ionicons name="checkmark-circle" size={scaleFont(14)} color="#4CAF50" />
+                                        <Text style={styles.collectionSavingsText}>
+                                            You save R{deliveryFee} with collection
+                                        </Text>
+                                    </View>
+                                )}
+                            </View>
+                        )}
+
+                        <View style={styles.spacer} />
                     </View>
                 )}
+                keyExtractor={(item) => item.key}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.scrollContainer}
+            />
 
-                {/* Special Instructions */}
-                {cart.length > 0 && (
-                    <View style={styles.instructionsSection}>
-                        <Text style={styles.sectionTitle}>Special Instructions</Text>
-                        <TextInput
-                            style={styles.instructionsInput}
-                            placeholder="Any special instructions for the restaurant?"
-                            placeholderTextColor="#999"
-                            value={specialInstructions}
-                            onChangeText={setSpecialInstructions}
-                            multiline
-                            numberOfLines={3}
-                        />
-                    </View>
-                )}
-
-                {/* Payment Method */}
-                {cart.length > 0 && (
-                    <View style={styles.paymentSection}>
-                        <Text style={styles.sectionTitle}>Payment Method</Text>
-                        <View style={styles.paymentOptions}>
-                            <TouchableOpacity
-                                style={[
-                                    styles.paymentOption,
-                                    selectedPaymentMethod === 'card' && styles.paymentOptionSelected
-                                ]}
-                                onPress={() => setSelectedPaymentMethod('card')}
-                            >
-                                <Ionicons
-                                    name={selectedPaymentMethod === 'card' ? "card" : "card-outline"}
-                                    size={scaleFont(20)}
-                                    color={selectedPaymentMethod === 'card' ? "#0DCAF0" : "#666"}
-                                />
-                                <Text style={[
-                                    styles.paymentOptionText,
-                                    selectedPaymentMethod === 'card' && styles.paymentOptionTextSelected
-                                ]}>
-                                    Credit/Debit Card
-                                </Text>
-                            </TouchableOpacity>
-
-                            <TouchableOpacity
-                                style={[
-                                    styles.paymentOption,
-                                    selectedPaymentMethod === 'cash' && styles.paymentOptionSelected
-                                ]}
-                                onPress={() => setSelectedPaymentMethod('cash')}
-                            >
-                                <Ionicons
-                                    name={selectedPaymentMethod === 'cash' ? "cash" : "cash-outline"}
-                                    size={scaleFont(20)}
-                                    color={selectedPaymentMethod === 'cash' ? "#0DCAF0" : "#666"}
-                                />
-                                <Text style={[
-                                    styles.paymentOptionText,
-                                    selectedPaymentMethod === 'cash' && styles.paymentOptionTextSelected
-                                ]}>
-                                    Cash on Delivery
-                                </Text>
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                )}
-
-                {/* Order Summary */}
-                {cart.length > 0 && (
-                    <View style={styles.summarySection}>
-                        <Text style={styles.sectionTitle}>Order Summary</Text>
-                        <View style={styles.summaryRow}>
-                            <Text style={styles.summaryLabel}>Subtotal</Text>
-                            <Text style={styles.summaryValue}>R{subtotal}</Text>
-                        </View>
-                        <View style={styles.summaryRow}>
-                            <Text style={styles.summaryLabel}>Delivery Fee</Text>
-                            <Text style={styles.summaryValue}>R{deliveryFee}</Text>
-                        </View>
-                        <View style={styles.summaryRow}>
-                            <Text style={styles.summaryLabel}>Tax (15%)</Text>
-                            <Text style={styles.summaryValue}>R{tax}</Text>
-                        </View>
-                        <View style={[styles.summaryRow, styles.totalRow]}>
-                            <Text style={styles.totalLabel}>Total</Text>
-                            <Text style={styles.totalValue}>R{total}</Text>
-                        </View>
-                    </View>
-                )}
-
-                {/* Spacer for bottom button */}
-                <View style={styles.spacer} />
-            </ScrollView>
-
-            {/* Place Order Button */}
             {cart.length > 0 && (
                 <View style={styles.placeOrderContainer}>
                     <TouchableOpacity
-                        style={styles.placeOrderButton}
+                        style={[styles.placeOrderButton, isPlacingOrder && styles.placeOrderButtonDisabled]}
                         onPress={placeOrder}
+                        disabled={isPlacingOrder}
                     >
-                        <Text style={styles.placeOrderText}>Place Order - R{total}</Text>
-                        <Ionicons name="arrow-forward" size={scaleFont(20)} color="#fff" />
+                        {isPlacingOrder ? (
+                            <ActivityIndicator size="small" color="#fff" />
+                        ) : (
+                            <>
+                                <Text style={styles.placeOrderText}>
+                                    Place {orderType === 'delivery' ? 'Delivery' : 'Collection'} Order - R{total}
+                                </Text>
+                                <Ionicons name="arrow-forward" size={scaleFont(20)} color="#fff" />
+                            </>
+                        )}
                     </TouchableOpacity>
                 </View>
             )}
@@ -646,9 +831,9 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         paddingHorizontal: responsiveWidth(5),
         paddingVertical: responsiveHeight(2),
-        backgroundColor: '#fff',
         borderBottomWidth: 1,
-        borderBottomColor: '#E6F7FF',
+        borderBottomColor: '#f0f0f0',
+        backgroundColor: '#fff',
     },
     backButton: {
         padding: responsiveWidth(2),
@@ -656,7 +841,9 @@ const styles = StyleSheet.create({
     headerTitle: {
         fontSize: scaleFont(18),
         fontWeight: 'bold',
-        color: '#2D3748',
+        color: '#333',
+        flex: 1,
+        textAlign: 'center',
     },
     clearButton: {
         padding: responsiveWidth(2),
@@ -666,8 +853,10 @@ const styles = StyleSheet.create({
         color: '#FF6B6B',
         fontWeight: '600',
     },
-    scrollContent: {
+    scrollContainer: {
         flexGrow: 1,
+    },
+    scrollContent: {
         paddingBottom: responsiveHeight(10),
     },
     restaurantSection: {
@@ -701,6 +890,12 @@ const styles = StyleSheet.create({
         color: '#0DCAF0',
         fontWeight: '600',
         marginBottom: responsiveHeight(1),
+    },
+    restaurantAddress: {
+        fontSize: scaleFont(12),
+        color: '#666',
+        marginTop: responsiveHeight(0.5),
+        fontStyle: 'italic',
     },
     restaurantDetails: {
         flexDirection: 'row',
@@ -755,6 +950,108 @@ const styles = StyleSheet.create({
         color: '#fff',
         fontWeight: 'bold',
     },
+    // Order Type Section
+    orderTypeSection: {
+        backgroundColor: '#fff',
+        padding: responsiveWidth(5),
+        marginBottom: responsiveHeight(2),
+    },
+    orderTypeOptions: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+    },
+    orderTypeOption: {
+        flex: 1,
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#f8f9fa',
+        padding: responsiveWidth(4),
+        borderRadius: responsiveWidth(3),
+        borderWidth: 2,
+        borderColor: 'transparent',
+        marginHorizontal: responsiveWidth(1),
+    },
+    orderTypeOptionSelected: {
+        backgroundColor: '#E6F7FF',
+        borderColor: '#0DCAF0',
+    },
+    orderTypeText: {
+        fontSize: scaleFont(14),
+        color: '#666',
+        fontWeight: '500',
+        marginTop: responsiveHeight(1),
+        textAlign: 'center',
+    },
+    orderTypeTextSelected: {
+        color: '#0DCAF0',
+        fontWeight: '600',
+    },
+    deliveryFeeText: {
+        fontSize: scaleFont(12),
+        color: '#666',
+        marginTop: responsiveHeight(0.5),
+    },
+    collectionSaveText: {
+        fontSize: scaleFont(12),
+        color: '#4CAF50',
+        fontWeight: '600',
+        marginTop: responsiveHeight(0.5),
+    },
+    // Collection Section
+    collectionSection: {
+        backgroundColor: '#fff',
+        padding: responsiveWidth(5),
+        marginBottom: responsiveHeight(2),
+    },
+    collectionInfo: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+    },
+    collectionDetails: {
+        flex: 1,
+        marginLeft: responsiveWidth(3),
+    },
+    collectionTitle: {
+        fontSize: scaleFont(16),
+        fontWeight: 'bold',
+        color: '#2D3748',
+        marginBottom: responsiveHeight(0.5),
+    },
+    collectionText: {
+        fontSize: scaleFont(14),
+        color: '#666',
+        marginBottom: responsiveHeight(1),
+    },
+    collectionAddress: {
+        fontSize: scaleFont(12),
+        color: '#666',
+        marginBottom: responsiveHeight(1),
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    collectionNote: {
+        fontSize: scaleFont(12),
+        color: '#0DCAF0',
+        fontStyle: 'italic',
+    },
+    // Collection Savings in Summary
+    collectionSavings: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#E8F5E8',
+        padding: responsiveWidth(3),
+        borderRadius: responsiveWidth(2),
+        marginTop: responsiveHeight(1),
+    },
+    collectionSavingsText: {
+        fontSize: scaleFont(12),
+        color: '#4CAF50',
+        fontWeight: '600',
+        marginLeft: responsiveWidth(1),
+    },
+    // ... rest of your existing styles remain the same
     cartItem: {
         flexDirection: 'row',
         backgroundColor: '#fff',
@@ -855,6 +1152,13 @@ const styles = StyleSheet.create({
         marginLeft: responsiveWidth(1),
     },
     addressInputContainer: {
+        marginTop: responsiveHeight(1),
+    },
+    // Manual input styles
+    manualInputContainer: {
+        marginTop: responsiveHeight(1),
+    },
+    manualInputWrapper: {
         flexDirection: 'row',
         alignItems: 'flex-start',
         backgroundColor: '#f8f9fa',
@@ -862,13 +1166,34 @@ const styles = StyleSheet.create({
         padding: responsiveWidth(4),
         borderWidth: 1,
         borderColor: '#E6F7FF',
+        marginBottom: responsiveHeight(1),
     },
-    addressInput: {
+    manualAddressInput: {
         flex: 1,
         fontSize: scaleFont(14),
         color: '#333',
         marginLeft: responsiveWidth(3),
         textAlignVertical: 'top',
+        padding: 0,
+    },
+    switchToAutocompleteButton: {
+        alignSelf: 'flex-start',
+        padding: responsiveWidth(2),
+    },
+    switchToAutocompleteText: {
+        fontSize: scaleFont(12),
+        color: '#0DCAF0',
+        fontWeight: '600',
+    },
+    switchToManualButton: {
+        alignSelf: 'flex-start',
+        padding: responsiveWidth(2),
+        marginTop: responsiveHeight(1),
+    },
+    switchToManualText: {
+        fontSize: scaleFont(12),
+        color: '#666',
+        fontWeight: '500',
     },
     instructionsSection: {
         backgroundColor: '#fff',
@@ -992,8 +1317,6 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         marginRight: responsiveWidth(2),
     },
-    // Add these styles to the CartScreen styles
-
     specialBadge: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -1054,8 +1377,6 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         marginLeft: responsiveWidth(0.5),
     },
-    // Add these styles to the CartScreen styles
-
     multipleRestaurantsSection: {
         backgroundColor: '#fff',
         padding: responsiveWidth(5),
@@ -1088,6 +1409,53 @@ const styles = StyleSheet.create({
         fontSize: scaleFont(10),
         color: '#666',
         fontWeight: '500',
+    },
+
+    // Google Places Autocomplete Styles
+    placesTextInputContainer: {
+        backgroundColor: 'transparent',
+        borderTopWidth: 0,
+        borderBottomWidth: 0,
+        paddingHorizontal: 0,
+    },
+    placesTextInput: {
+        height: responsiveHeight(6),
+        backgroundColor: '#f8f9fa',
+        borderWidth: 1,
+        borderColor: '#e9ecef',
+        borderRadius: 8,
+        paddingHorizontal: responsiveWidth(4),
+        fontSize: scaleFont(14),
+        color: '#333',
+    },
+    placesListView: {
+        backgroundColor: '#fff',
+        borderWidth: 1,
+        borderColor: '#e9ecef',
+        borderTopWidth: 0,
+        marginHorizontal: responsiveWidth(2),
+        elevation: 3,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 3,
+    },
+    placesDescription: {
+        fontSize: scaleFont(14),
+        color: '#333',
+    },
+    placesPoweredContainer: {
+        display: 'none',
+    },
+    placesLeftButton: {
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginLeft: responsiveWidth(3),
+        marginRight: responsiveWidth(1),
+    },
+    placeOrderButtonDisabled: {
+        backgroundColor: '#666',
+        opacity: 0.7,
     },
 });
 

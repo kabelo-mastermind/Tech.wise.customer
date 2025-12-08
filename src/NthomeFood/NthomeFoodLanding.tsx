@@ -18,8 +18,10 @@ import CustomDrawer from "../components/CustomDrawer"
 import { Icon } from "react-native-elements"
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons"
 import { colors } from '../global/styles';
-import { useSelector } from 'react-redux';
+import { useSelector, useDispatch } from 'react-redux'; // Added useDispatch
+import { addToCart } from '../redux/actions/orderActions'; // Import addToCart action
 import * as Location from 'expo-location';
+import { api } from '../../api';
 
 const { width, height } = Dimensions.get('window');
 
@@ -27,6 +29,8 @@ const { width, height } = Dimensions.get('window');
 const responsiveWidth = (percentage) => (width * percentage) / 100;
 const responsiveHeight = (percentage) => (height * percentage) / 100;
 const scaleFont = (size) => (width / 375) * size; // Base width 375 (iPhone 6/7/8)
+
+const API_BASE_URL = api
 
 // Weather function with mock data for South Africa
 const fetchWeatherData = async (latitude, longitude) => {
@@ -58,35 +62,6 @@ const fetchWeatherData = async (latitude, longitude) => {
     }
 };
 
-// Realistic South Africa weather data
-const getMockWeatherData = () => {
-    const saWeatherConditions = [
-        { condition: "Sunny", icon: "weather-sunny", tempRange: [20, 35], windRange: [5, 15] },
-        { condition: "Partly Cloudy", icon: "weather-partly-cloudy", tempRange: [18, 28], windRange: [8, 18] },
-        { condition: "Cloudy", icon: "weather-cloudy", tempRange: [16, 24], windRange: [10, 20] },
-        { condition: "Light Rain", icon: "weather-rainy", tempRange: [14, 22], windRange: [12, 25] },
-        { condition: "Thunderstorms", icon: "weather-lightning-rainy", tempRange: [15, 23], windRange: [15, 30] },
-        { condition: "Clear", icon: "weather-night", tempRange: [12, 20], windRange: [5, 12] }
-    ];
-
-    const randomCondition = saWeatherConditions[Math.floor(Math.random() * saWeatherConditions.length)];
-    const [minTemp, maxTemp] = randomCondition.tempRange;
-    const [minWind, maxWind] = randomCondition.windRange;
-
-    const temp = Math.floor(Math.random() * (maxTemp - minTemp + 1)) + minTemp;
-    const wind = Math.floor(Math.random() * (maxWind - minWind + 1)) + minWind;
-    const humidity = Math.floor(Math.random() * 30) + 50; // 50-80% typical for SA
-
-    return {
-        temp: temp,
-        condition: randomCondition.condition,
-        icon: randomCondition.icon,
-        wind: wind,
-        humidity: humidity,
-        location: "Current Location"
-    };
-};
-
 const getWeatherIcon = (weatherCode) => {
     if (weatherCode >= 200 && weatherCode < 300) return 'weather-lightning';
     if (weatherCode >= 300 && weatherCode < 500) return 'weather-pouring';
@@ -102,12 +77,30 @@ const NthomeFoodLanding = ({ navigation }) => {
     const [drawerOpen, setDrawerOpen] = useState(false)
     const toggleDrawer = () => setDrawerOpen(!drawerOpen)
     const user = useSelector((state) => state.auth.user)
+    const cart = useSelector((state) => state.order.cart) // Get cart from Redux
+    const dispatch = useDispatch() // Initialize dispatch
 
     const [weather, setWeather] = useState(null)
     const [loadingWeather, setLoadingWeather] = useState(true)
     const [weatherError, setWeatherError] = useState(false)
     const [userLocation, setUserLocation] = useState(null)
-    const [cart, setCart] = useState([]);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [isSearching, setIsSearching] = useState(false);
+    const [searchResults, setSearchResults] = useState({
+        shops: [],
+        specials: [],
+        recommendations: []
+    });
+
+    // New state for real data
+    const [restaurants, setRestaurants] = useState([]);
+    const [loadingRestaurants, setLoadingRestaurants] = useState(true);
+    const [restaurantError, setRestaurantError] = useState(null);
+
+    // New state for today's specials
+    const [todaySpecials, setTodaySpecials] = useState([]);
+    const [loadingSpecials, setLoadingSpecials] = useState(true);
+
     // Get location and weather
     useEffect(() => {
         let isMounted = true;
@@ -118,15 +111,6 @@ const NthomeFoodLanding = ({ navigation }) => {
 
                 // Request location permission
                 let { status } = await Location.requestForegroundPermissionsAsync();
-                // if (status !== 'granted') {
-                //     console.log('Location permission denied');
-                //     // Use default South Africa location
-                //     const defaultLocation = { latitude: -25.7479, longitude: 28.2293 }; // Pretoria
-                //     setUserLocation(defaultLocation);
-                //     const weatherData = await fetchWeatherData(defaultLocation.latitude, defaultLocation.longitude);
-                //     if (isMounted) setWeather(weatherData);
-                //     return;
-                // }
 
                 // Get current location
                 let location = await Location.getCurrentPositionAsync({
@@ -160,6 +144,218 @@ const NthomeFoodLanding = ({ navigation }) => {
         };
     }, []);
 
+    // Fetch restaurants from API
+    useEffect(() => {
+        fetchRestaurants();
+    }, []);
+
+    // Fetch today's specials from all restaurants
+    useEffect(() => {
+        if (restaurants.length > 0) {
+            fetchTodaySpecials();
+        }
+    }, [restaurants]);
+
+    // Function to fetch restaurants from your API
+    const fetchRestaurants = async () => {
+        try {
+            setLoadingRestaurants(true);
+            setRestaurantError(null);
+
+            const response = await fetch(`${API_BASE_URL}/restaurants_info`);
+
+            if (!response.ok) {
+                throw new Error(`Failed to fetch restaurants: ${response.status}`);
+            }
+
+            const data = await response.json();
+
+            // Transform API data to match your existing structure
+            const transformedRestaurants = data.map(restaurant => ({
+                id: restaurant.id,
+                name: restaurant.name,
+                category: restaurant.category || 'Restaurant',
+                image: restaurant.image_url
+                    ? { uri: restaurant.image_url }
+                    : require('../../assets/nthomeFood_images/restaurants/default-restaurant.png'),
+                rating: restaurant.rating || 4.0,
+                deliveryTime: '20-40 min',
+                address: restaurant.address,
+                phone: restaurant.phone,
+                email: restaurant.email,
+                opening_hours: restaurant.opening_hours,
+                description: restaurant.description,
+                user_id: restaurant.user_id
+            }));
+
+            setRestaurants(transformedRestaurants);
+        } catch (error) {
+            console.error('Error fetching restaurants:', error);
+            setRestaurantError(error.message);
+            // Fallback to dummy data if API fails
+            setRestaurants(getFallbackRestaurants());
+        } finally {
+            setLoadingRestaurants(false);
+        }
+    };
+
+    // Function to fetch today's specials (items with discounts)
+    const fetchTodaySpecials = async () => {
+        try {
+            setLoadingSpecials(true);
+
+            let allSpecials = [];
+
+            // Fetch menu items from each restaurant that has discounts
+            for (const restaurant of restaurants) {
+                try {
+                    const response = await fetch(`${API_BASE_URL}/menu_items/user/${restaurant.user_id}`);
+
+                    if (response.ok) {
+                        const menuItems = await response.json();
+
+                        // Filter items with discounts
+                        const discountedItems = menuItems.filter(item =>
+                            item.discount_percentage > 0 && item.available
+                        );
+
+                        // Transform to specials format
+                        const restaurantSpecials = discountedItems.map(item => ({
+                            id: item.id,
+                            name: item.item_name,
+                            description: item.description || 'Delicious special item',
+                            originalPrice: `R${item.price}`,
+                            specialPrice: `R${item.discounted_price}`,
+                            discount: `${item.discount_percentage}% OFF`,
+                            shop: restaurant.name,
+                            shopId: restaurant.id,
+                            category: item.category || item.category_name || 'Special',
+                            image: item.image_url
+                                ? { uri: item.image_url }
+                                : require('../../assets/nthomeFood_images/restaurants/default-restaurant.png'),
+                            timeLeft: getRandomTimeLeft(), // Generate random time for urgency
+                            tags: getTagsForItem(item),
+                            restaurant: restaurant
+                        }));
+
+                        allSpecials = [...allSpecials, ...restaurantSpecials];
+                    }
+                } catch (error) {
+                    console.error(`Error fetching menu for ${restaurant.name}:`, error);
+                }
+            }
+
+            // Limit to 6 specials and shuffle
+            const shuffledSpecials = allSpecials.sort(() => 0.5 - Math.random()).slice(0, 6);
+            setTodaySpecials(shuffledSpecials);
+
+        } catch (error) {
+            console.error('Error fetching today\'s specials:', error);
+            // Fallback to dummy specials
+            setTodaySpecials(getFallbackSpecials());
+        } finally {
+            setLoadingSpecials(false);
+        }
+    };
+
+    // Helper function to generate random time left
+    const getRandomTimeLeft = () => {
+        const hours = Math.floor(Math.random() * 12) + 1;
+        const minutes = Math.floor(Math.random() * 60);
+        return `${hours}h ${minutes}m`;
+    };
+
+    // Helper function to generate tags based on item properties
+    const getTagsForItem = (item) => {
+        const tags = [];
+        if (item.is_special) tags.push('Limited Time');
+        if (item.discount_percentage > 20) tags.push('Best Deal');
+        if (tags.length === 0) tags.push('Popular');
+        return tags;
+    };
+
+    // Fallback restaurants data in case API fails
+    const getFallbackRestaurants = () => {
+        return [
+            {
+                id: 1,
+                name: 'Flaka cloud',
+                category: 'Fast Food',
+                image: require('../../assets/nthomeFood_images/restaurants/flaka.png'),
+                rating: 4.2,
+                deliveryTime: '20-30 min',
+                address: 'Mamelodi, Pretoria',
+                phone: '+27 12 345 6789',
+                email: 'info@flaka.com',
+                opening_hours: '08:00 - 22:00',
+                user_id: 1
+            },
+        ];
+    };
+
+    // Fallback specials data in case API fails
+    const getFallbackSpecials = () => {
+        return [
+            {
+                id: 1,
+                name: 'Special Meal',
+                description: 'Chef\'s special meal of the day',
+                originalPrice: 'R187.50',
+                specialPrice: 'R150',
+                discount: '20% OFF',
+                shop: 'Flaka Cloud',
+                shopId: 1,
+                category: 'Special',
+                image: require('../../assets/nthomeFood_images/buff-burger.jpg'),
+                timeLeft: '6h 30m',
+                tags: ['Limited Time', 'Popular']
+            }
+        ];
+    };
+
+    // Search functionality - updated to use real restaurants data
+    useEffect(() => {
+        if (searchQuery.trim() === '') {
+            setIsSearching(false);
+            setSearchResults({
+                shops: [],
+                specials: [],
+                recommendations: []
+            });
+            return;
+        }
+
+        setIsSearching(true);
+        const query = searchQuery.toLowerCase().trim();
+
+        // Filter restaurants (shops)
+        const filteredShops = restaurants.filter(restaurant =>
+            restaurant.name.toLowerCase().includes(query) ||
+            restaurant.category.toLowerCase().includes(query) ||
+            (restaurant.description && restaurant.description.toLowerCase().includes(query))
+        );
+
+        // Filter specials
+        const filteredSpecials = todaySpecials.filter(special =>
+            special.name.toLowerCase().includes(query) ||
+            special.shop.toLowerCase().includes(query) ||
+            special.category.toLowerCase().includes(query) ||
+            special.description.toLowerCase().includes(query)
+        );
+
+        // Filter recommendations
+        const filteredRecommendations = recommendations.filter(rec =>
+            rec.name.toLowerCase().includes(query) ||
+            rec.restaurant.toLowerCase().includes(query)
+        );
+
+        setSearchResults({
+            shops: filteredShops,
+            specials: filteredSpecials,
+            recommendations: filteredRecommendations
+        });
+    }, [searchQuery, restaurants, todaySpecials]);
+
     // Refresh weather
     const refreshWeather = async () => {
         setLoadingWeather(true);
@@ -172,6 +368,112 @@ const NthomeFoodLanding = ({ navigation }) => {
         } finally {
             setLoadingWeather(false);
         }
+    };
+
+    // Refresh restaurants and specials
+    const refreshRestaurants = () => {
+        fetchRestaurants();
+    };
+
+    // Refresh specials only
+    const refreshSpecials = () => {
+        fetchTodaySpecials();
+    };
+
+    // Handle search
+    const handleSearch = (text) => {
+        setSearchQuery(text);
+    };
+
+    // Clear search
+    const clearSearch = () => {
+        setSearchQuery('');
+        setIsSearching(false);
+    };
+
+    // Add special to cart using Redux
+    const addSpecialToCart = (special) => {
+        const restaurant = restaurants.find(shop => shop.id === special.shopId);
+
+        if (!restaurant) {
+            Alert.alert("Error", "Restaurant not found");
+            return;
+        }
+
+        const cartItem = {
+            id: special.id,
+            name: special.name,
+            description: special.description,
+            price: special.specialPrice,
+            image: special.image,
+            restaurant: special.shop,
+            restaurantId: special.shopId,
+            quantity: 1,
+            isSpecial: true,
+            specialDetails: {
+                originalPrice: special.originalPrice,
+                discount: special.discount
+            },
+            cartId: `${special.id}-${special.shopId}-special` // Unique cart ID
+        };
+
+        // Dispatch the addToCart action
+        dispatch(addToCart(cartItem));
+
+        Alert.alert(
+            "Added to Cart!",
+            `${special.name} from ${special.shop} has been added to your cart`,
+            [
+                { text: "Continue Shopping" },
+                {
+                    text: "View Cart",
+                    onPress: () => navigation.navigate('Cart', {
+                        restaurant: null
+                    })
+                }
+            ]
+        );
+    };
+
+    // Handle special press
+    const handleSpecialPress = (special) => {
+        Alert.alert(
+            special.name,
+            `Add ${special.name} from ${special.shop} to cart?`,
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "View Restaurant",
+                    onPress: () => {
+                        const restaurant = restaurants.find(shop => shop.id === special.shopId);
+                        if (restaurant) {
+                            navigation.navigate('RestaurantDetail', {
+                                restaurant: restaurant,
+                                highlightedItem: special.name
+                            });
+                        }
+                    }
+                },
+                {
+                    text: "Add to Cart",
+                    style: "default",
+                    onPress: () => addSpecialToCart(special)
+                }
+            ]
+        );
+    };
+
+    // Handle shop press from special item
+    const handleShopPress = (shopId) => {
+        const restaurant = restaurants.find(shop => shop.id === shopId);
+        if (restaurant) {
+            navigation.navigate('RestaurantDetail', { restaurant: restaurant });
+        }
+    };
+
+    // Calculate total cart items count
+    const getCartItemCount = () => {
+        return cart.reduce((total, item) => total + item.quantity, 0);
     };
 
     // Weather widget component
@@ -210,135 +512,7 @@ const NthomeFoodLanding = ({ navigation }) => {
         </TouchableOpacity>
     );
 
-    // Mamelodi Shop Names Data
-    const mamelodiShops = [
-        {
-            id: 1,
-            name: 'Flaka cloud',
-            category: 'Fast Food',
-            image: require('../../assets/nthomeFood_images/restaurants/flaka.png'),
-            rating: 4.2,
-            deliveryTime: '20-30 min'
-        },
-        {
-            id: 2,
-            name: 'Chicken Licken',
-            category: 'Fast Food',
-            image: require('../../assets/nthomeFood_images/chicken-licken.jpg'),
-            rating: 4.0,
-            deliveryTime: '25-35 min'
-        },
-        {
-            id: 3,
-            name: 'Debonairs Pizza',
-            category: 'Pizza',
-            image: require('../../assets/nthomeFood_images/debonairs.png'),
-            rating: 4.3,
-            deliveryTime: '30-40 min'
-        },
-        {
-            id: 4,
-            name: 'Nandos',
-            category: 'Grill',
-            image: require('../../assets/nthomeFood_images/nandos.png'),
-            rating: 4.1,
-            deliveryTime: '35-45 min'
-        },
-        {
-            id: 5,
-            name: 'Steers',
-            category: 'Burgers',
-            image: require('../../assets/nthomeFood_images/steers.jpg'),
-            rating: 4.4,
-            deliveryTime: '25-35 min'
-        },
-        {
-            id: 6,
-            name: 'Fish & Chips Co',
-            category: 'Seafood',
-            image: require('../../assets/nthomeFood_images/fish-chips.png'),
-            rating: 4.2,
-            deliveryTime: '20-30 min'
-        },
-        {
-            id: 7,
-            name: 'Mochachos',
-            category: 'Mexican',
-            image: require('../../assets/nthomeFood_images/mochachos.jpg'),
-            rating: 4.0,
-            deliveryTime: '30-40 min'
-        },
-        {
-            id: 8,
-            name: 'Romans Pizza',
-            category: 'Pizza',
-            image: require('../../assets/nthomeFood_images/romans.png'),
-            rating: 4.1,
-            deliveryTime: '35-45 min'
-        }
-    ];
-
-    // Enhanced Today's Specials with shop information
-    const todaySpecials = [
-        {
-            id: 1,
-            name: 'Chomee na Chomee',
-            originalPrice: 'R187.50',
-            specialPrice: 'R150',
-            discount: '20% OFF',
-            shop: 'Flava cloud',
-            shopId: 1,
-            category: 'Burger Meal',
-            description: '2x rib burger chips and 2x cappy juice mocktails',
-            image: require('../../assets/nthomeFood_images/special/flaka-special.png'),
-            timeLeft: '6h 30m',
-            tags: ['Limited Time', 'Popular']
-        },
-        {
-            id: 2,
-            name: 'Fire Grilled Chicken',
-            originalPrice: 'R175',
-            specialPrice: 'R139',
-            discount: '25% OFF',
-            shop: 'Chicken Licken',
-            shopId: 2,
-            category: 'Grilled Chicken',
-            description: 'Flame-grilled chicken with special seasoning',
-            image: require('../../assets/nthomeFood_images/chicken-burger.jpg'),
-            timeLeft: '4h 15m',
-            tags: ['Best Seller', 'Healthy']
-        },
-        {
-            id: 3,
-            name: 'Pepperoni Pizza',
-            originalPrice: 'R299',
-            specialPrice: 'R229',
-            discount: '30% OFF',
-            shop: 'Debonairs Pizza',
-            shopId: 3,
-            category: 'Pizza',
-            description: 'Large pepperoni pizza with extra cheese',
-            image: require('../../assets/nthomeFood_images/pepperoni-pizza.png'),
-            timeLeft: '8h 45m',
-            tags: ['Family Deal', 'Cheesy']
-        },
-        {
-            id: 4,
-            name: 'Buff Burger Combo',
-            originalPrice: 'R120',
-            specialPrice: 'R89',
-            discount: '15% OFF',
-            shop: 'Steers',
-            shopId: 5,
-            category: 'Burger Meal',
-            description: 'Juicy beef burger with fries and drink',
-            image: require('../../assets/nthomeFood_images/buff-burger.jpg'),
-            timeLeft: '5h 20m',
-            tags: ['Combo Deal', 'Value']
-        }
-    ];
-
-    // Recommendations Data
+    // Recommendations Data (you can make this dynamic too)
     const recommendations = [
         {
             id: 1,
@@ -356,248 +530,213 @@ const NthomeFoodLanding = ({ navigation }) => {
             rating: 4.7,
             image: require('../../assets/nthomeFood_images/pepperoni-pizza.png')
         },
-        {
-            id: 3,
-            name: 'Grilled Chicken',
-            restaurant: 'Nandos',
-            price: 'R245',
-            rating: 4.3,
-            image: require('../../assets/nthomeFood_images/grilled-chicken.png')
-        },
-        {
-            id: 4,
-            name: 'Fish & Chips',
-            restaurant: 'Fish & Chips Co',
-            price: 'R175',
-            rating: 4.4,
-            image: require('../../assets/nthomeFood_images/fish&chips.png')
-        },
     ];
 
-    // In NthomeFoodLanding.js - Update the addSpecialToCart function
+    // Render loading state for specials
+    const renderSpecialsLoading = () => (
+        <View style={styles.specialsLoadingContainer}>
+            <ActivityIndicator size="small" color="#0DCAF0" />
+            <Text style={styles.specialsLoadingText}>Loading specials...</Text>
+        </View>
+    );
 
-    const addSpecialToCart = (special) => {
-        const restaurant = mamelodiShops.find(shop => shop.id === special.shopId);
+    // Render empty state for specials
+    const renderSpecialsEmpty = () => (
+        <View style={styles.specialsEmptyContainer}>
+            <Ionicons name="pricetag-outline" size={scaleFont(48)} color="#ccc" />
+            <Text style={styles.specialsEmptyTitle}>No Specials Today</Text>
+            <Text style={styles.specialsEmptyText}>
+                Check back later for amazing deals!
+            </Text>
+        </View>
+    );
 
-        if (!restaurant) {
-            Alert.alert("Error", "Restaurant not found");
-            return;
-        }
+    // Render search results
+    const renderSearchResults = () => {
+        const hasResults = searchResults.shops.length > 0 ||
+            searchResults.specials.length > 0 ||
+            searchResults.recommendations.length > 0;
 
-        const cartItem = {
-            id: special.id,
-            name: special.name,
-            description: special.description,
-            price: special.specialPrice,
-            image: special.image,
-            restaurant: special.shop,
-            restaurantId: special.shopId,
-            quantity: 1,
-            isSpecial: true,
-            specialDetails: {
-                originalPrice: special.originalPrice,
-                discount: special.discount
-            }
-        };
-
-        // Check if item already exists in cart
-        const existingItemIndex = cart.findIndex(item =>
-            item.id === special.id &&
-            item.restaurantId === special.shopId &&
-            item.isSpecial
-        );
-
-        if (existingItemIndex !== -1) {
-            // Item already exists - show message and increase quantity
-            const updatedCart = [...cart];
-            updatedCart[existingItemIndex].quantity += 1;
-            setCart(updatedCart);
-
-            Alert.alert(
-                "Item Updated",
-                `${special.name} from ${special.shop} quantity increased to ${updatedCart[existingItemIndex].quantity}`,
-                [
-                    { text: "Continue Shopping" },
-                    {
-                        text: "Go to Cart",
-                        onPress: () => navigation.navigate('Cart', {
-                            cart: updatedCart,
-                            restaurant: null
-                        })
-                    }
-                ]
-            );
-        } else {
-            // New item - add to cart
-            setCart(prevCart => [...prevCart, cartItem]);
-
-            Alert.alert(
-                "Added to Cart!",
-                `${special.name} from ${special.shop} has been added to your cart`,
-                [
-                    { text: "Continue Shopping" },
-                    {
-                        text: "View Cart",
-                        onPress: () => navigation.navigate('Cart', {
-                            cart: [...cart, cartItem],
-                            restaurant: null
-                        })
-                    }
-                ]
+        if (!hasResults && searchQuery.trim() !== '') {
+            return (
+                <View style={styles.noResultsContainer}>
+                    <Text style={styles.noResultsText}>
+                        No results found for "{searchQuery}"
+                    </Text>
+                    <Text style={styles.noResultsSubText}>
+                        Try searching for restaurants, food items, or categories
+                    </Text>
+                </View>
             );
         }
-    };
-    
-    // Update the handleSpecialPress function to show options
-    const handleSpecialPress = (special) => {
-        Alert.alert(
-            special.name,
-            `Add ${special.name} from ${special.shop} to cart?`,
-            [
-                { text: "Cancel", style: "cancel" },
-                {
-                    text: "View Restaurant",
-                    onPress: () => {
-                        const restaurant = mamelodiShops.find(shop => shop.id === special.shopId);
-                        if (restaurant) {
-                            navigation.navigate('RestaurantDetail', {
-                                restaurant: restaurant,
-                                highlightedItem: special.name
-                            });
-                        }
-                    }
-                },
-                {
-                    text: "Add to Cart",
-                    style: "default",
-                    onPress: () => addSpecialToCart(special)
-                }
-            ]
-        );
-    };
 
-    // Handle shop press from special item
-    const handleShopPress = (shopId) => {
-        const restaurant = mamelodiShops.find(shop => shop.id === shopId);
-        if (restaurant) {
-            navigation.navigate('RestaurantDetail', { restaurant: restaurant });
-        }
-    };
-
-
-
-
-    return (
-        <SafeAreaView style={styles.container}>
-            <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-
-       // In NthomeFoodLanding.js - Update the header section
-
-            {/* Header */}
-            <View style={[styles.header, drawerOpen && styles.headerHidden]}>
-                {/* Left: Menu button */}
-                <TouchableOpacity onPress={toggleDrawer} style={styles.roundButton}>
-                    <Icon type="material-community" name="menu" color={"#0DCAF0"} size={scaleFont(24)} />
-                </TouchableOpacity>
-
-                {/* Center: Weather Widget */}
-                {renderWeatherWidget()}
-
-                {/* Right: Cart and Profile */}
-                <View style={styles.headerRight}>
-                    <TouchableOpacity
-                        style={styles.cartButton}
-                        onPress={() => navigation.navigate('Cart', {
-                            cart: cart,
-                            restaurant: null // No specific restaurant for mixed cart
-                        })}
-                    >
-                        <Ionicons name="cart-outline" size={scaleFont(24)} color="#0DCAF0" />
-                        {cart.length > 0 && (
-                            <View style={styles.cartBadge}>
-                                <Text style={styles.cartBadgeText}>
-                                    {cart.reduce((sum, item) => sum + item.quantity, 0)}
-                                </Text>
-                            </View>
-                        )}
-                    </TouchableOpacity>
-
-                    <TouchableOpacity onPress={() => navigation.navigate("Profile")} style={styles.profileButton}>
-                        <Image
-                            source={user?.profile_picture ? { uri: user.profile_picture } : require('../../assets/placeholder.jpg')}
-                            style={styles.profileImage}
-                        />
-                    </TouchableOpacity>
-                </View>
-            </View>
-
-            {/* Search Bar */}
-            <View style={styles.searchContainer}>
-                <View style={styles.searchWrapper}>
-                    <TextInput
-                        style={styles.searchInput}
-                        placeholder="Search restaurants in Mamelodi..."
-                        placeholderTextColor="#999"
-                    />
-                    <TouchableOpacity style={styles.searchIcon}>
-                        <Icon type="material-community" name="magnify" color={"#fff"} size={scaleFont(18)} />
-                    </TouchableOpacity>
-                </View>
-            </View>
-
-            <ScrollView showsVerticalScrollIndicator={false} style={styles.scrollView}>
-                {/* Banner Image - Made Thicker */}
-                <View style={styles.bannerContainer}>
-                    <Image
-                        source={require('../../assets/nthomeFood_images/food-banner.png')}
-                        style={styles.bannerImage}
-                        resizeMode="cover"
-                    />
-                </View>
-
-                {/* Popular in Mamelodi */}
-                <View style={styles.categoriesSection}>
-                    <View style={styles.sectionHeader}>
-                        <Text style={styles.sectionTitle}>Popular in Mamelodi</Text>
-                        <TouchableOpacity onPress={() => navigation.navigate('SeeAllRestaurants', { type: 'popular' })}>
-                            <Text style={styles.seeAllText}>See all</Text>
-                        </TouchableOpacity>
+        return (
+            <View style={styles.searchResultsContainer}>
+                {/* Search Results for Shops */}
+                {searchResults.shops.length > 0 && (
+                    <View style={styles.searchSection}>
+                        <Text style={styles.searchSectionTitle}>Restaurants</Text>
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoriesScroll}>
+                            {searchResults.shops.map((restaurant, index) => (
+                                <TouchableOpacity
+                                    key={restaurant.id}
+                                    style={styles.shopItem}
+                                    onPress={() => navigation.navigate('RestaurantDetail', { restaurant: restaurant })}
+                                >
+                                    <View style={[
+                                        styles.shopImageContainer,
+                                        { backgroundColor: index % 2 === 0 ? '#E6F7FF' : '#F0F9FF' }
+                                    ]}>
+                                        <Image
+                                            source={restaurant.image}
+                                            style={styles.shopImage}
+                                            defaultSource={require('../../assets/nthomeFood_images/restaurants/default-restaurant.png')}
+                                        />
+                                        <View style={styles.ratingBadge}>
+                                            <Text style={styles.ratingText}>⭐ {restaurant.rating}</Text>
+                                        </View>
+                                    </View>
+                                    <View style={styles.shopInfo}>
+                                        <Text style={styles.shopName} numberOfLines={1}>{restaurant.name}</Text>
+                                        <Text style={styles.shopCategory}>{restaurant.category}</Text>
+                                        <Text style={styles.deliveryTime}>{restaurant.deliveryTime}</Text>
+                                    </View>
+                                </TouchableOpacity>
+                            ))}
+                        </ScrollView>
                     </View>
+                )}
+
+                {/* Search Results for Specials */}
+                {searchResults.specials.length > 0 && (
+                    <View style={styles.searchSection}>
+                        <Text style={styles.searchSectionTitle}>Specials</Text>
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.specialsScroll}>
+                            {searchResults.specials.map((special) => (
+                                <TouchableOpacity
+                                    key={special.id}
+                                    style={styles.specialItem}
+                                    onPress={() => handleSpecialPress(special)}
+                                >
+                                    <View style={styles.discountBadge}>
+                                        <Text style={styles.discountText}>{special.discount}</Text>
+                                    </View>
+                                    <Image
+                                        source={special.image}
+                                        style={styles.specialImage}
+                                        defaultSource={require('../../assets/nthomeFood_images/restaurants/default-restaurant.png')}
+                                    />
+                                    <View style={styles.specialInfo}>
+                                        <Text style={styles.specialShop}>{special.shop}</Text>
+                                        <Text style={styles.specialName}>{special.name}</Text>
+                                        <Text style={styles.specialCategory}>{special.category}</Text>
+                                        <View style={styles.priceSection}>
+                                            <Text style={styles.originalPrice}>{special.originalPrice}</Text>
+                                            <Text style={styles.specialPrice}>{special.specialPrice}</Text>
+                                        </View>
+                                    </View>
+                                </TouchableOpacity>
+                            ))}
+                        </ScrollView>
+                    </View>
+                )}
+
+                {/* Search Results for Recommendations */}
+                {searchResults.recommendations.length > 0 && (
+                    <View style={styles.searchSection}>
+                        <Text style={styles.searchSectionTitle}>Food Items</Text>
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.recommendationsScroll}>
+                            {searchResults.recommendations.map((item) => (
+                                <TouchableOpacity key={item.id} style={styles.recommendationItem}>
+                                    <Image source={item.image} style={styles.recommendationImage} />
+                                    <View style={styles.recommendationInfo}>
+                                        <Text style={styles.recommendationName} numberOfLines={2}>{item.name}</Text>
+                                        <Text style={styles.recommendationRestaurant}>{item.restaurant}</Text>
+                                        <View style={styles.recommendationDetails}>
+                                            <View style={styles.recommendationRating}>
+                                                <Icon type="material-community" name="star" color={"#FFD700"} size={scaleFont(14)} />
+                                                <Text style={styles.ratingText}>{item.rating}</Text>
+                                            </View>
+                                            <Text style={styles.recommendationPrice}>{item.price}</Text>
+                                        </View>
+                                    </View>
+                                </TouchableOpacity>
+                            ))}
+                        </ScrollView>
+                    </View>
+                )}
+            </View>
+        );
+    };
+
+    // Render normal content when not searching
+    const renderNormalContent = () => (
+        <>
+            {/* Banner Image */}
+            <View style={styles.bannerContainer}>
+                <Image
+                    source={require('../../assets/nthomeFood_images/food-banner.png')}
+                    style={styles.bannerImage}
+                    resizeMode="cover"
+                />
+            </View>
+
+            {/* Popular in Mamelodi */}
+            <View style={styles.categoriesSection}>
+                <View style={styles.sectionHeader}>
+                    <Text style={styles.sectionTitle}>Popular in Mamelodi</Text>
+                    <TouchableOpacity onPress={refreshRestaurants}>
+                        <MaterialCommunityIcons name="refresh" color="#0DCAF0" size={scaleFont(20)} />
+                    </TouchableOpacity>
+                </View>
+                {loadingRestaurants ? (
+                    <ActivityIndicator size="small" color="#0DCAF0" />
+                ) : restaurants.length > 0 ? (
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoriesScroll}>
-                        {mamelodiShops.map((shop, index) => (
+                        {restaurants.map((restaurant, index) => (
                             <TouchableOpacity
-                                key={shop.id}
+                                key={restaurant.id}
                                 style={styles.shopItem}
-                                onPress={() => navigation.navigate('RestaurantDetail', { restaurant: shop })}
+                                onPress={() => navigation.navigate('RestaurantDetail', { restaurant: restaurant })}
                             >
                                 <View style={[
                                     styles.shopImageContainer,
                                     { backgroundColor: index % 2 === 0 ? '#E6F7FF' : '#F0F9FF' }
                                 ]}>
-                                    <Image source={shop.image} style={styles.shopImage} />
+                                    <Image
+                                        source={restaurant.image}
+                                        style={styles.shopImage}
+                                        defaultSource={require('../../assets/nthomeFood_images/restaurants/default-restaurant.png')}
+                                    />
                                     <View style={styles.ratingBadge}>
-                                        <Text style={styles.ratingText}>⭐ {shop.rating}</Text>
+                                        <Text style={styles.ratingText}>⭐ {restaurant.rating}</Text>
                                     </View>
                                 </View>
                                 <View style={styles.shopInfo}>
-                                    <Text style={styles.shopName} numberOfLines={1}>{shop.name}</Text>
-                                    <Text style={styles.shopCategory}>{shop.category}</Text>
-                                    <Text style={styles.deliveryTime}>{shop.deliveryTime}</Text>
+                                    <Text style={styles.shopName} numberOfLines={1}>{restaurant.name}</Text>
+                                    <Text style={styles.shopCategory}>{restaurant.category}</Text>
+                                    <Text style={styles.deliveryTime}>{restaurant.deliveryTime}</Text>
                                 </View>
                             </TouchableOpacity>
                         ))}
                     </ScrollView>
+                ) : (
+                    <Text style={styles.noRestaurantsText}>No restaurants available</Text>
+                )}
+            </View>
+
+            {/* Today's Special - Now Dynamic */}
+            <View style={styles.specialsSection}>
+                <View style={styles.sectionHeader}>
+                    <Text style={styles.sectionTitle}>Today's Special</Text>
+                    <TouchableOpacity onPress={refreshSpecials}>
+                        <MaterialCommunityIcons name="refresh" color="#0DCAF0" size={scaleFont(20)} />
+                    </TouchableOpacity>
                 </View>
 
-                {/* Today's Special */}
-                <View style={styles.specialsSection}>
-                    <View style={styles.sectionHeader}>
-                        <Text style={styles.sectionTitle}>Today's Special</Text>
-                        <TouchableOpacity>
-                            <Text style={styles.seeAllText}>View all</Text>
-                        </TouchableOpacity>
-                    </View>
-
+                {loadingSpecials ? (
+                    renderSpecialsLoading()
+                ) : todaySpecials.length > 0 ? (
                     <ScrollView
                         horizontal
                         showsHorizontalScrollIndicator={false}
@@ -605,7 +744,7 @@ const NthomeFoodLanding = ({ navigation }) => {
                     >
                         {todaySpecials.map((special) => (
                             <TouchableOpacity
-                                key={special.id}
+                                key={`${special.id}-${special.shopId}`}
                                 style={styles.specialItem}
                                 onPress={() => handleSpecialPress(special)}
                             >
@@ -620,7 +759,11 @@ const NthomeFoodLanding = ({ navigation }) => {
                                     <Text style={styles.timeText}>{special.timeLeft}</Text>
                                 </View>
 
-                                <Image source={special.image} style={styles.specialImage} />
+                                <Image
+                                    source={special.image}
+                                    style={styles.specialImage}
+                                    defaultSource={require('../../assets/nthomeFood_images/restaurants/default-restaurant.png')}
+                                />
 
                                 <View style={styles.specialInfo}>
                                     {/* Shop Name */}
@@ -670,50 +813,122 @@ const NthomeFoodLanding = ({ navigation }) => {
                             </TouchableOpacity>
                         ))}
                     </ScrollView>
-                </View>
+                ) : (
+                    renderSpecialsEmpty()
+                )}
+            </View>
 
-                {/* Recommendations Section */}
-                <View style={styles.recommendationsSection}>
-                    <View style={styles.sectionHeader}>
-                        <Text style={styles.sectionTitle}>Recommended for You</Text>
-                        <TouchableOpacity onPress={() => navigation.navigate('SeeAllRestaurants', { type: 'recommendations' })}>
-                            <Text style={styles.seeAllText}>See all</Text>
-                        </TouchableOpacity>
-                    </View>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.recommendationsScroll}>
-                        {recommendations.map((item) => (
-                            <TouchableOpacity key={item.id} style={styles.recommendationItem}>
-                                <Image source={item.image} style={styles.recommendationImage} />
-                                <View style={styles.recommendationInfo}>
-                                    <Text style={styles.recommendationName} numberOfLines={2}>{item.name}</Text>
-                                    <TouchableOpacity
-                                        onPress={() => {
-                                            // Find the restaurant in mamelodiShops
-                                            const restaurant = mamelodiShops.find(shop => shop.name === item.restaurant);
-                                            if (restaurant) {
-                                                navigation.navigate('RestaurantDetail', { restaurant: restaurant });
-                                            }
-                                        }}
-                                    >
-                                        <Text style={styles.recommendationRestaurant}>{item.restaurant}</Text>
-                                    </TouchableOpacity>
-                                    <View style={styles.recommendationDetails}>
-                                        <View style={styles.recommendationRating}>
-                                            <Icon type="material-community" name="star" color={"#FFD700"} size={scaleFont(14)} />
-                                            <Text style={styles.ratingText}>{item.rating}</Text>
-                                        </View>
-                                        <Text style={styles.recommendationPrice}>{item.price}</Text>
-                                    </View>
-                                    <TouchableOpacity style={styles.recommendationButton}>
-                                        <Text style={styles.recommendationButtonText}>Add to Cart</Text>
-                                    </TouchableOpacity>
-                                </View>
-                            </TouchableOpacity>
-                        ))}
-                    </ScrollView>
+            {/* Recommendations Section */}
+            <View style={styles.recommendationsSection}>
+                <View style={styles.sectionHeader}>
+                    <Text style={styles.sectionTitle}>Recommended for You</Text>
+                    <TouchableOpacity onPress={() => navigation.navigate('SeeAllRestaurants', { type: 'recommendations' })}>
+                        <Text style={styles.seeAllText}>See all</Text>
+                    </TouchableOpacity>
                 </View>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.recommendationsScroll}>
+                    {recommendations.map((item) => (
+                        <TouchableOpacity key={item.id} style={styles.recommendationItem}>
+                            <Image source={item.image} style={styles.recommendationImage} />
+                            <View style={styles.recommendationInfo}>
+                                <Text style={styles.recommendationName} numberOfLines={2}>{item.name}</Text>
+                                <TouchableOpacity
+                                    onPress={() => {
+                                        // Find the restaurant in restaurants
+                                        const restaurant = restaurants.find(shop => shop.name === item.restaurant);
+                                        if (restaurant) {
+                                            navigation.navigate('RestaurantDetail', { restaurant: restaurant });
+                                        }
+                                    }}
+                                >
+                                    <Text style={styles.recommendationRestaurant}>{item.restaurant}</Text>
+                                </TouchableOpacity>
+                                <View style={styles.recommendationDetails}>
+                                    <View style={styles.recommendationRating}>
+                                        <Icon type="material-community" name="star" color={"#FFD700"} size={scaleFont(14)} />
+                                        <Text style={styles.ratingText}>{item.rating}</Text>
+                                    </View>
+                                    <Text style={styles.recommendationPrice}>{item.price}</Text>
+                                </View>
+                                <TouchableOpacity style={styles.recommendationButton}>
+                                    <Text style={styles.recommendationButtonText}>Add to Cart</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </TouchableOpacity>
+                    ))}
+                </ScrollView>
+            </View>
+        </>
+    );
+
+    return (
+        <SafeAreaView style={styles.container}>
+            <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+            {/* Header */}
+            <View style={[styles.header, drawerOpen && styles.headerHidden]}>
+                <TouchableOpacity onPress={toggleDrawer} style={styles.roundButton}>
+                    <Icon type="material-community" name="menu" color={"#0DCAF0"} size={scaleFont(24)} />
+                </TouchableOpacity>
+
+                {renderWeatherWidget()}
+
+                <View style={styles.headerRight}>
+                    <TouchableOpacity
+                        style={styles.cartButton}
+                        onPress={() => navigation.navigate('Cart', {
+                            restaurant: null
+                        })}
+                    >
+                        <Ionicons name="cart-outline" size={scaleFont(24)} color="#0DCAF0" />
+                        {getCartItemCount() > 0 && (
+                            <View style={styles.cartBadge}>
+                                <Text style={styles.cartBadgeText}>
+                                    {getCartItemCount()}
+                                </Text>
+                            </View>
+                        )}
+                    </TouchableOpacity>
+
+                    <TouchableOpacity onPress={() => navigation.navigate("Profile")} style={styles.profileButton}>
+                        <Image
+                            source={user?.profile_picture ? { uri: user.profile_picture } : require('../../assets/placeholder.jpg')}
+                            style={styles.profileImage}
+                        />
+                    </TouchableOpacity>
+                </View>
+            </View>
+
+            {/* Search Bar */}
+            <View style={styles.searchContainer}>
+                <View style={styles.searchWrapper}>
+                    <TextInput
+                        style={styles.searchInput}
+                        placeholder="Search restaurants in Mamelodi..."
+                        placeholderTextColor="#999"
+                        value={searchQuery}
+                        onChangeText={handleSearch}
+                    />
+                    {searchQuery ? (
+                        <TouchableOpacity style={styles.clearButton} onPress={clearSearch}>
+                            <Icon type="material-community" name="close" color={"#fff"} size={scaleFont(18)} />
+                        </TouchableOpacity>
+                    ) : (
+                        <TouchableOpacity style={styles.searchIcon}>
+                            <Icon type="material-community" name="magnify" color={"#fff"} size={scaleFont(18)} />
+                        </TouchableOpacity>
+                    )}
+                </View>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} style={styles.scrollView}>
+                {isSearching || searchQuery ? renderSearchResults() : renderNormalContent()}
             </ScrollView>
-            <CustomDrawer isOpen={drawerOpen} toggleDrawer={toggleDrawer} navigation={navigation} />
+            <CustomDrawer
+                isOpen={drawerOpen}
+                toggleDrawer={toggleDrawer}
+                navigation={navigation}
+                currentScreen="NthomeFoodLanding"
+            />
         </SafeAreaView>
     );
 };
@@ -802,6 +1017,33 @@ const styles = StyleSheet.create({
         fontSize: scaleFont(10),
         color: '#666',
         marginLeft: responsiveWidth(1),
+    },
+    headerRight: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    cartButton: {
+        padding: responsiveWidth(2),
+        position: 'relative',
+        marginRight: responsiveWidth(2),
+    },
+    cartBadge: {
+        position: 'absolute',
+        top: responsiveHeight(0.5),
+        right: responsiveWidth(1),
+        backgroundColor: '#FF6B6B',
+        borderRadius: responsiveWidth(3),
+        minWidth: responsiveWidth(5),
+        height: responsiveWidth(5),
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: '#fff',
+    },
+    cartBadgeText: {
+        fontSize: scaleFont(10),
+        color: '#fff',
+        fontWeight: 'bold',
     },
     profileButton: {
         width: responsiveWidth(12),
@@ -1181,34 +1423,128 @@ const styles = StyleSheet.create({
         fontSize: scaleFont(12),
         fontWeight: 'bold',
     },
-    // Add to your existing styles in NthomeFoodLanding.js
-
-    headerRight: {
-        flexDirection: 'row',
+    // Search Results Styles
+    searchResultsContainer: {
+        paddingHorizontal: responsiveWidth(5),
+        paddingTop: responsiveHeight(2),
+    },
+    searchSection: {
+        marginBottom: responsiveHeight(3),
+    },
+    searchSectionTitle: {
+        fontSize: scaleFont(18),
+        fontWeight: 'bold',
+        color: '#2D3748',
+        marginBottom: responsiveHeight(2),
+    },
+    noResultsContainer: {
         alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: responsiveHeight(10),
+        paddingHorizontal: responsiveWidth(10),
     },
-    cartButton: {
-        padding: responsiveWidth(2),
-        position: 'relative',
-        marginRight: responsiveWidth(2),
+    noResultsText: {
+        fontSize: scaleFont(16),
+        fontWeight: '600',
+        color: '#718096',
+        textAlign: 'center',
+        marginBottom: responsiveHeight(1),
     },
-    cartBadge: {
+    noResultsSubText: {
+        fontSize: scaleFont(14),
+        color: '#A0AEC0',
+        textAlign: 'center',
+    },
+    clearButton: {
         position: 'absolute',
-        top: responsiveHeight(0.5),
-        right: responsiveWidth(1),
+        right: responsiveWidth(2.5),
+        top: responsiveHeight(1),
         backgroundColor: '#FF6B6B',
-        borderRadius: responsiveWidth(3),
-        minWidth: responsiveWidth(5),
-        height: responsiveWidth(5),
+        width: responsiveWidth(10),
+        height: responsiveWidth(10),
+        borderRadius: responsiveWidth(5),
         justifyContent: 'center',
         alignItems: 'center',
-        borderWidth: 1,
-        borderColor: '#fff',
+        elevation: 3,
+        shadowColor: '#FF6B6B',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.3,
+        shadowRadius: 4,
     },
-    cartBadgeText: {
-        fontSize: scaleFont(10),
-        color: '#fff',
+    loadingContainer: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: responsiveHeight(10),
+    },
+    loadingText: {
+        fontSize: scaleFont(16),
+        color: '#666',
+        marginTop: responsiveHeight(2),
+    },
+    errorContainer: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: responsiveHeight(10),
+        paddingHorizontal: responsiveWidth(10),
+    },
+    errorText: {
+        fontSize: scaleFont(18),
         fontWeight: 'bold',
+        color: '#FF6B6B',
+        textAlign: 'center',
+        marginTop: responsiveHeight(2),
+    },
+    errorSubText: {
+        fontSize: scaleFont(14),
+        color: '#666',
+        textAlign: 'center',
+        marginTop: responsiveHeight(1),
+        marginBottom: responsiveHeight(3),
+    },
+    retryButton: {
+        backgroundColor: '#0DCAF0',
+        paddingHorizontal: responsiveWidth(6),
+        paddingVertical: responsiveHeight(1.5),
+        borderRadius: responsiveWidth(3),
+    },
+    retryButtonText: {
+        color: '#fff',
+        fontSize: scaleFont(14),
+        fontWeight: 'bold',
+    },
+    noRestaurantsText: {
+        textAlign: 'center',
+        fontSize: scaleFont(16),
+        color: '#666',
+        marginTop: responsiveHeight(2),
+    },
+    specialsLoadingContainer: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: responsiveHeight(4),
+    },
+    specialsLoadingText: {
+        fontSize: scaleFont(14),
+        color: '#666',
+        marginTop: responsiveHeight(1),
+    },
+    specialsEmptyContainer: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: responsiveHeight(6),
+        paddingHorizontal: responsiveWidth(10),
+    },
+    specialsEmptyTitle: {
+        fontSize: scaleFont(18),
+        fontWeight: 'bold',
+        color: '#666',
+        marginTop: responsiveHeight(2),
+        marginBottom: responsiveHeight(1),
+    },
+    specialsEmptyText: {
+        fontSize: scaleFont(14),
+        color: '#999',
+        textAlign: 'center',
     },
 });
 

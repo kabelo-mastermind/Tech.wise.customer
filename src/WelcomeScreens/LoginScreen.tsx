@@ -159,6 +159,7 @@ const LoginScreen = ({ navigation }) => {
       if (response.data && response.data.id) {
         const user_id = response.data.id;
         const customer_code = response.data.customer_code;
+        const phoneNumber = response.data.phoneNumber;
 
         setUser_Id(user_id);
         console.log("Successfully fetched - user_id:", user_id, "customer_code:", customer_code);
@@ -171,6 +172,7 @@ const LoginScreen = ({ navigation }) => {
           role: userData.role,
           user_id,
           customer_code,
+          phoneNumber,
           profile_picture: response.data?.profile_picture,
         }));
 

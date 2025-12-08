@@ -141,6 +141,8 @@ export const stopListeningToMultipleTripStatuses = () => {
     });
   }
 };
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Listen for incoming chat messages
 export const listenToChatMessages = (callback) => {
   if (!socket) {
@@ -211,5 +213,27 @@ export const listenToDeletedMessages = (callback) => {
     callback(messageData);
   });
 };
+export const listenToFoodOrderUpdates = (callback) => {
+  if (!socket) {
+    console.error('❌ Socket not initialized for food order updates');
+    return;
+  }
 
+  // FIX: avoid duplicate listeners
+  socket.off("foodOrderUpdate");
+
+  socket.on("foodOrderUpdate", (data) => {
+    console.log("🍔 RAW:", data);
+
+    const payload = Array.isArray(data) ? data[0] : data;
+
+    console.log("🍔 FINAL:", payload);
+
+    callback(payload);
+  });
+};
+
+
+// Emit food order status update
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 export default socket;

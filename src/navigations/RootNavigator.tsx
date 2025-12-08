@@ -57,6 +57,8 @@ import NthomeFoodLanding from "../NthomeFood/NthomeFoodLanding";
 import SeeAllRestaurantsScreen from "../NthomeFood/SeeAllRestaurantsScreen";
 import RestaurantDetailScreen from "../NthomeFood/RestaurantDetailScreen";
 import CartScreen from "../NthomeFood/CartScreen";
+import OrderTrackingScreen from "../NthomeFood/OrderTrackingScreen";
+import OrderHistory from "../NthomeFood/OrderHistory";
 
 
 const Stack = createNativeStackNavigator();
@@ -402,6 +404,8 @@ export default function RootNavigator() {
         <Stack.Screen name="SeeAllRestaurants" component={SeeAllRestaurantsScreen} options={{ headerShown: false }} />
         <Stack.Screen name="RestaurantDetail" component={RestaurantDetailScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Cart" component={CartScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="OrderTracking" component={OrderTrackingScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="OrderHistory" component={OrderHistory} options={{ headerShown: false }} />
 
 
 
