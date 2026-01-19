@@ -116,10 +116,10 @@ function BottomTabNavigator() {
 // Drawer Navigator
 function DrawerNavigator() {
   return (
-    <Drawer.Navigator initialRouteName="RequestScreen" screenOptions={{ headerShown: false }}>
+    <Drawer.Navigator initialRouteName="Home" screenOptions={{ headerShown: false }}>
       <Drawer.Screen
-        name="RequestScreen"
-        component={RequestScreen}
+        name="Home"
+        component={HomeScreen}
         options={{
           drawerIcon: ({ focused, size }) => (
             <Icon name="car" type="material-community" size={size} color={focused ? "#7cc" : "gray"} />
@@ -127,8 +127,8 @@ function DrawerNavigator() {
         }}
       />
       <Drawer.Screen
-        name="Home"
-        component={HomeScreen}
+        name="RequestScreen"
+        component={RequestScreen}
         options={{
           drawerIcon: ({ focused, size }) => (
             <Icon name="home" type="material-community" size={size} color={focused ? "#7cc" : "gray"} />

@@ -112,7 +112,7 @@ const NthomeServicesScreen = ({ navigation }) => {
   }
 
   const handleFoodPress = () => {
-     navigation.navigate("FoodWelcomeScreen")
+    navigation.navigate("FoodWelcomeScreen")
 
   }
 
@@ -130,16 +130,16 @@ const NthomeServicesScreen = ({ navigation }) => {
   const closeChatBot = () => {
     setChatBotVisible(false)
   }
-     const handleEmailSupport = () => {
-      const email = "nthomecouriers@gmail.com"; // Replace with your support email
-      const subject = "Support Request";
-      const body = "Hi, I need help with...";
-      const url = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-  
-      Linking.openURL(url).catch((err) =>
-        console.error("Failed to open email client:", err)
-      );
-    };
+  const handleEmailSupport = () => {
+    const email = "nthomecouriers@gmail.com"; // Replace with your support email
+    const subject = "Support Request";
+    const body = "Hi, I need help with...";
+    const url = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+
+    Linking.openURL(url).catch((err) =>
+      console.error("Failed to open email client:", err)
+    );
+  };
 
   // Calculate header opacity based on scroll position
   const headerOpacity = scrollY.interpolate({
@@ -193,13 +193,7 @@ const NthomeServicesScreen = ({ navigation }) => {
               onPress={handleRidesPress}
               index={0}
             />
-            <ServiceCard
-              title="NthomeAir"
-              description="Elevate your travel experience with premium air travel."
-              isComingSoon={false}
-              onPress={handleAirPress}
-              index={1}
-            />
+
             <ServiceCard
               title="NthomeFood"
               description="Delicious meals, delivered to your doorstep in minutes."
@@ -208,12 +202,19 @@ const NthomeServicesScreen = ({ navigation }) => {
               index={2}
             />
             <ServiceCard
+              title="NthomeAir"
+              description="Elevate your travel experience with premium air travel."
+              isComingSoon={false}
+              onPress={handleAirPress}
+              index={1}
+            />
+            {/* <ServiceCard
               title="NthomeShop"
               description="Shop your favorite items with ease and fast delivery."
               isComingSoon={true}
               onPress={handleShopPress}
               index={3}
-            />
+            /> */}
           </View>
 
           <View style={styles.infoSection}>

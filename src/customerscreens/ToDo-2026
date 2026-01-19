@@ -1,0 +1,5 @@
+1.Homescreeen
+    A. popularDestinations, recentSearches & exclusiveOffers have to be dynamic depending on the user data, fallback is how currently it looks.
+    B. clicking popularDestinations, recentSearches or exclusiveOffers redirects you to the service with data
+2.NthomeFoodServices
+    A. 

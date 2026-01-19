@@ -43,15 +43,15 @@ const services = [
   },
   {
     id: "2",
-    title: "NthomeAir",
-    description: "Find the best deals on domestic and international flights.",
-    icon: <Ionicons name="airplane" size={28} color="#0A94B8" />,
-  },
-  {
-    id: "3",
     title: "NthomeFood",
     description: "Order from your favourite SA restaurants in minutes.",
     icon: <Ionicons name="fast-food" size={28} color="#0A94B8" />,
+  },
+  {
+    id: "3",
+    title: "NthomeAir",
+    description: "Find the best deals on domestic and international flights.",
+    icon: <Ionicons name="airplane" size={28} color="#0A94B8" />,
   },
 ];
 
@@ -73,11 +73,11 @@ const recentSearches = [
 const exclusiveOffers = [
   {
     id: "1",
-    title: "Mzansi Getaway",
-    description: "Fly from Joburg to Cape Town from just R999!",
-    discount: "FROM R999",
-    image: require("../../assets/nthomeAir_images/fly.jpg"),
-    category: "Flights",
+    title: "Gauteng Rider Special",
+    description: "Get 20% off your next ride in Pretoria or Johannesburg.",
+    discount: "20% OFF",
+    image: require("../../assets/nthomeAir_images/ride.jpg"),
+    category: "E-Hailing",
   },
   {
     id: "2",
@@ -89,12 +89,13 @@ const exclusiveOffers = [
   },
   {
     id: "3",
-    title: "Gauteng Rider Special",
-    description: "Get 20% off your next ride in Pretoria or Johannesburg.",
-    discount: "20% OFF",
-    image: require("../../assets/nthomeAir_images/ride.jpg"),
-    category: "E-Hailing",
+    title: "Mzansi Getaway",
+    description: "Fly from Joburg to Cape Town from just R999!",
+    discount: "FROM R999",
+    image: require("../../assets/nthomeAir_images/fly.jpg"),
+    category: "Flights",
   },
+
 ]
 
 // Improved Weather Function with Fallback
@@ -112,7 +113,7 @@ const fetchWeatherData = async (latitude, longitude) => {
     }
 
     const data = await response.json();
-    
+
     return {
       temp: Math.round(data.main.temp),
       condition: data.weather[0].description,
@@ -126,35 +127,6 @@ const fetchWeatherData = async (latitude, longitude) => {
     // return getMockWeatherData();
   }
 };
-
-// Realistic South Africa weather data
-// const getMockWeatherData = () => {
-//   // const saWeatherConditions = [
-//   //   { condition: "Sunny", icon: "weather-sunny", tempRange: [20, 35], windRange: [5, 15] },
-//   //   { condition: "Partly Cloudy", icon: "weather-partly-cloudy", tempRange: [18, 28], windRange: [8, 18] },
-//   //   { condition: "Cloudy", icon: "weather-cloudy", tempRange: [16, 24], windRange: [10, 20] },
-//   //   { condition: "Light Rain", icon: "weather-rainy", tempRange: [14, 22], windRange: [12, 25] },
-//   //   { condition: "Thunderstorms", icon: "weather-lightning-rainy", tempRange: [15, 23], windRange: [15, 30] },
-//   //   { condition: "Clear", icon: "weather-night", tempRange: [12, 20], windRange: [5, 12] }
-//   // ];
-  
-//   const randomCondition = saWeatherConditions[Math.floor(Math.random() * saWeatherConditions.length)];
-//   const [minTemp, maxTemp] = randomCondition.tempRange;
-//   const [minWind, maxWind] = randomCondition.windRange;
-  
-//   const temp = Math.floor(Math.random() * (maxTemp - minTemp + 1)) + minTemp;
-//   const wind = Math.floor(Math.random() * (maxWind - minWind + 1)) + minWind;
-//   const humidity = Math.floor(Math.random() * 30) + 50; // 50-80% typical for SA
-  
-//   return {
-//     temp: temp,
-//     condition: randomCondition.condition,
-//     icon: randomCondition.icon,
-//     wind: wind,
-//     humidity: humidity,
-//     location: "Current Location"
-//   };
-// };
 
 const getWeatherIcon = (weatherCode) => {
   if (weatherCode >= 200 && weatherCode < 300) return 'weather-lightning';
@@ -226,7 +198,7 @@ const HomeScreen = ({ navigation }) => {
       } catch (error) {
         console.log('Error:', error);
         if (!isMounted) return;
-        
+
         // Fallback to default data
         const fallbackLocation = { latitude: -25.7479, longitude: 28.2293 };
         setUserLocation(fallbackLocation);
@@ -318,7 +290,7 @@ const HomeScreen = ({ navigation }) => {
               />
             </TouchableOpacity>
           </View>
-          
+
           <View style={styles.mainHeaderContentRow}>
             <View style={styles.leftColumn}>
               <Text style={styles.welcomeText}>Welcome back!</Text>
@@ -341,9 +313,9 @@ const HomeScreen = ({ navigation }) => {
           </View>
         </SafeAreaView>
       </View>
-      
+
       <View style={styles.headerDivider} />
-      
+
       {/* Content Sections */}
       <ScrollView
         style={styles.scrollViewContent}
@@ -368,8 +340,8 @@ const HomeScreen = ({ navigation }) => {
                 onPress={() => {
                   switch (item.id) {
                     case "1": navigation.navigate("RequestScreen"); break;
-                    case "2": navigation.navigate("FlightWelcomeScreen"); break;
-                    case "3": navigation.navigate("services"); break;
+                    case "2": navigation.navigate("NthomeFoodLanding"); break;
+                    case "3": navigation.navigate("FlightWelcomeScreen"); break;
                     default: break;
                   }
                 }}
@@ -384,7 +356,7 @@ const HomeScreen = ({ navigation }) => {
             keyExtractor={(item) => item.id}
           />
         </View>
-        
+
         {/* Other sections remain the same */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Popular Destinations</Text>
@@ -404,7 +376,7 @@ const HomeScreen = ({ navigation }) => {
             keyExtractor={(item) => item.id}
           />
         </View>
-        
+
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Recent Searches</Text>
           <FlatList
@@ -420,7 +392,7 @@ const HomeScreen = ({ navigation }) => {
             keyExtractor={(item) => item.id}
           />
         </View>
-        
+
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Exclusive Offers</Text>
           <FlatList
@@ -442,7 +414,7 @@ const HomeScreen = ({ navigation }) => {
           />
         </View>
       </ScrollView>
-      
+
       <CustomDrawer isOpen={drawerOpen} toggleDrawer={toggleDrawer} navigation={navigation} />
     </View>
   )
