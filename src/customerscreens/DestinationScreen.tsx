@@ -48,7 +48,8 @@ const DestinationScreen = ({ navigation, route }) => {
   const userEmail = useSelector((state) => state.auth?.user.email)
   const dispatch = useDispatch()
   const trip_id = useSelector((state) => state.trip.tripData?.tripId || "")
-
+  // Add this state near your other state declarations
+  const [hasNavigated, setHasNavigated] = useState(false);
   // Payment status from navigation params
   const [paymentStatus, setPaymentStatus] = useState(null)
 
@@ -77,7 +78,7 @@ const DestinationScreen = ({ navigation, route }) => {
   const { originDriver = {} } = useContext(DriverOriginContext)
   const { origin = {} } = useContext(OriginContext)
   const { destination = {} } = useContext(DestinationContext)
-  console.log("DestinationScreen destination*************************:", tripData);
+  // console.log("DestinationScreen destination*************************:", tripData);
 
   const [userOrigin] = useState({
     latitude: origin?.latitude || tripData?.pickUpCoordinates?.latitude || null,
@@ -181,9 +182,9 @@ const DestinationScreen = ({ navigation, route }) => {
     return remainingSeconds;
   };
 
-  
+
   // Improved countdown timer that adjusts based on driver movement
- useEffect(() => {
+  useEffect(() => {
     if (!eta || eta === "N/A" || !driverLocation) {
       setCountdown(null);
       setCountdownSeconds(0);
@@ -285,16 +286,69 @@ const DestinationScreen = ({ navigation, route }) => {
   }, [eta]);
 
   const handleCancelTrip = () => {
-    setCancelModalVisible(true) // Show cancellation modal
-  }
+    // Optional: Add confirmation alert
+    Alert.alert(
+      "Cancel Trip",
+      "Are you sure you want to cancel this trip?",
+      [
+        {
+          text: "No",
+          style: "cancel"
+        },
+        {
+          text: "Yes",
+          onPress: () => {
+            setCancelModalVisible(true);
+          }
+        }
+      ]
+    );
+  };
 
+  // Add this function near your other functions
+  const handleTripCancellation = (source = 'socket') => {
+    console.log(`Trip canceled via ${source}`);
+
+    // Reset all trip-related states
+    setTripStatus("canceled");
+    setCountdown(null);
+    setCountdownSeconds(0);
+    setArrivalTime(null);
+    setDriverLocation(null);
+    setShowCancelAlert(true);
+    setHasNavigated(false);
+
+    // Clear Redux state
+    dispatch({
+      type: 'SET_TRIP_DATA',
+      payload: { status: 'canceled' }
+    });
+    dispatch(clearMessages());
+
+    // Stop listening to socket events
+    stopListeningToTripAccepted();
+    stopListeningToTripDeclined();
+
+    // Auto-navigate after showing alert
+    setTimeout(() => {
+      if (!hasNavigated) {
+        setShowCancelAlert(false);
+        setHasNavigated(true);
+        navigation.navigate("RequestScreen");
+      }
+    }, 2000);
+  };
+
+  // And update your manual cancellation too:
   const handleCancel = async (reason) => {
-    setCancelReason(reason)
-    // console.log("Trip Cancelled for reason:", reason);
+    setCancelReason(reason);
+    setHasNavigated(false);
 
-    // Assuming you have the tripId, cancel_by (user ID or admin), and distance_traveled (if applicable)
-    const tripId = tripData?.tripId // Replace with the actual trip ID you want to cancel
-    const distanceTraveled = distanceTrip || null // Replace with the actual distance if relevant
+    // Show alert immediately
+    setShowCancelAlert(true);
+
+    const tripId = tripData?.tripId;
+    const distanceTraveled = distanceTrip || null;
 
     try {
       const response = await fetch(`${api}trips/${tripId}/status`, {
@@ -308,32 +362,45 @@ const DestinationScreen = ({ navigation, route }) => {
           cancel_by: "customer",
           distance_traveled: distanceTraveled,
         }),
-      })
+      });
 
       if (response.status === 200) {
-        // console.log('Trip status updated:', await response.json());
-        emitTripCanceltToDrivers(tripData, driver_id) // Emit trip cancellation to drivers
-        stopListeningToTripAccepted()
-        stopListeningToTripDeclined()
+        emitTripCanceltToDrivers(tripData, driver_id);
+        stopListeningToTripAccepted();
+        stopListeningToTripDeclined();
 
-        navigation.navigate("RequestScreen")
+        // Use the same cleanup function
+        handleTripCancellation('manual');
+
       } else if (response.status === 404) {
-        console.error("Trip not found:", await response.json())
-        // Handle trip not found error here, e.g., display a message to the user
+        console.error("Trip not found:", await response.json());
+        setShowCancelAlert(false);
         showToast("error", "Trip Not Found", "The trip does not exist or has been removed.");
       } else {
-        console.log("Trip status not updated:", await response.json())
+        console.log("Trip status not updated:", await response.json());
+        setShowCancelAlert(false);
       }
     } catch (error) {
-      console.error("Error canceling the trip:", error)
+      console.error("Error canceling the trip:", error);
+      setShowCancelAlert(false);
       showToast("error", "Trip Not Found", "The trip does not exist or has been removed.");
     }
-  }
+
+    setCancelModalVisible(false);
+  };
 
   const handleCloseModal = () => {
     setCancelModalVisible(false) // Close modal
   }
 
+  useEffect(() => {
+    return () => {
+      // Cleanup when component unmounts
+      stopListeningToTripAccepted();
+      stopListeningToTripDeclined();
+      setHasNavigated(false);
+    };
+  }, []);
   const [customerCode, setCustomerCode] = useState(null)
 
   // Fetch customer code when trip is started for payments
@@ -444,19 +511,16 @@ const DestinationScreen = ({ navigation, route }) => {
 
 
 
-    // Listen for when the trip is canceled/declined
+    // Then update your socket listener:
     listenToTripDeclined((data) => {
-      console.log("❌ Trip canceled:", data)
+      console.log("❌ Trip canceled via socket:", data);
       showToast("error", "Trip canceled", "Your trip has been canceled!");
-      setTripStatus("canceled")
-      setCountdown(null);
-      setCountdownSeconds(0);
-      setArrivalTime(null);
-      dispatch({
-        type: 'SET_TRIP_DATA',
-        payload: { status: 'canceled' }
-      });
-    })
+
+      // Wait a moment for toast to show, then handle cancellation
+      setTimeout(() => {
+        handleTripCancellation('socket');
+      }, 500); // 0.5 second delay
+    });
 
     listenToChatMessages((messageData) => {
       setNotificationCountChat((prevCount) => prevCount + 1)
@@ -503,8 +567,7 @@ const DestinationScreen = ({ navigation, route }) => {
     }
   }, [tripData?.status, tripData?.dropOffCoordinates])
 
-  // Fetch trip statuses every 5 seconds
-  // Fetch trip statuses periodically
+  // Find this useEffect that checks trip status
   useEffect(() => {
     const fetchTripStatuses = async () => {
       if (!user_id) return;
@@ -523,6 +586,9 @@ const DestinationScreen = ({ navigation, route }) => {
             setCountdown(null);
             setCountdownSeconds(0);
             setArrivalTime(null);
+            dispatch(clearMessages())
+            stopListeningToTripAccepted();
+            stopListeningToTripDeclined();
           }
         }
       } catch (error) {
@@ -531,29 +597,27 @@ const DestinationScreen = ({ navigation, route }) => {
           "Error",
           "Failed to fetch trip statuses. Please try again later."
         );
-
       }
     };
 
     fetchTripStatuses();
     const intervalId = setInterval(fetchTripStatuses, 5000);
     return () => clearInterval(intervalId);
-  }, [user_id, api, tripStatusAccepted]); // Added tripStatusAccepted to deps
+  }, [user_id, api, tripStatusAccepted]);
 
   // hndle payment initiation and trip status changes
   useEffect(() => {
     if (tripStatusAccepted === "canceled") {
-      // Alert.alert("Trip cancelled", "Choose a different driver.");
 
-      navigation.navigate("RequestScreen", { driverId: driver_id });
-
-      setTimeout(() => {
-        navigation.navigate("CarListingBottomSheet", { driverId: driver_id });
-        setShowCancelAlert(true);
-      }, 100);
+      // Just do cleanup without navigation or alert
+      setDriverLocation({ latitude: null, longitude: null });
+      setCountdown(null);
+      setCountdownSeconds(0);
+      setArrivalTime(null);
       dispatch(clearMessages())
       stopListeningToTripAccepted();
       stopListeningToTripDeclined();
+
     }
 
     if (
@@ -855,12 +919,12 @@ const DestinationScreen = ({ navigation, route }) => {
               {/* Right button OR placeholder */}
               <View style={styles.iconWrapper}>
                 {/* {!(tripStatus === "started" || route.params?.paymentStatus === "success") && ( */}
-                  <TouchableOpacity
-                    style={styles.cancelButtonContainer}
-                    onPress={handleCancelTrip}
-                  >
-                    <Icon name="cancel" color="#0DCAF0" size={30} />
-                  </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.cancelButtonContainer}
+                  onPress={handleCancelTrip}
+                >
+                  <Icon name="cancel" color="#0DCAF0" size={30} />
+                </TouchableOpacity>
                 {/* )} */}
               </View>
             </View>
@@ -899,11 +963,19 @@ const DestinationScreen = ({ navigation, route }) => {
           )}
         </View>
       </TouchableWithoutFeedback>
+
       {drawerOpen && <CustomDrawer isOpen={drawerOpen} toggleDrawer={toggleDrawer} navigation={navigation} />}
+
       <CancelAlertModal
         visible={showCancelAlert}
-        message="Trip was cancelled."
-        onClose={() => setShowCancelAlert(false)}
+        message="Trip has been cancelled."
+        onClose={() => {
+          setShowCancelAlert(false);
+          if (!hasNavigated) {
+            setHasNavigated(true);
+            navigation.navigate("RequestScreen");
+          }
+        }}
       />
     </SafeAreaView >
   )

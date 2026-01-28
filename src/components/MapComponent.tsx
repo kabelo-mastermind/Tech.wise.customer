@@ -1,7 +1,7 @@
 "use client"
 
-import { useEffect, useRef, memo, useCallback } from "react"
-import { View, StyleSheet, Image } from "react-native"
+import { useEffect, useRef, memo, useCallback, useState } from "react"
+import { View, StyleSheet, Image, TouchableOpacity } from "react-native"
 import MapView, { PROVIDER_GOOGLE, Marker } from "react-native-maps"
 import MapViewDirections from "react-native-maps-directions"
 import { mapStyle } from "../global/mapStyle"
@@ -9,6 +9,75 @@ import { GOOGLE_MAPS_APIKEY } from "@env"
 import { useDispatch } from "react-redux"
 import { setDistance, setDuration } from "../redux/actions/locationActions"
 import { Icon } from "react-native-elements"
+
+// Utility functions for navigation
+function calculateBearing(start, end) {
+  if (!start || !end) return 0
+  const toRad = (deg) => (deg * Math.PI) / 180
+  const toDeg = (rad) => (rad * 180) / Math.PI
+  const lat1 = toRad(start.latitude)
+  const lon1 = toRad(start.longitude)
+  const lat2 = toRad(end.latitude)
+  const lon2 = toRad(end.longitude)
+  const dLon = lon2 - lon1
+  const y = Math.sin(dLon) * Math.cos(lat2)
+  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon)
+  let brng = Math.atan2(y, x)
+  brng = toDeg(brng)
+  return (brng + 360) % 360
+}
+
+function calculateDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371000 // Earth's radius in meters
+  const dLat = ((lat2 - lat1) * Math.PI) / 180
+  const dLon = ((lon2 - lon1) * Math.PI) / 180
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2)
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+  return R * c
+}
+
+function getRouteDirection(currentLocation, polylineCoords, lookAheadDistance = 200) {
+  if (!polylineCoords || polylineCoords.length < 2) return 0
+  let currentIndex = 0
+  let minDistance = Number.POSITIVE_INFINITY
+  for (let i = 0; i < polylineCoords.length; i++) {
+    const distance = calculateDistance(
+      currentLocation.latitude,
+      currentLocation.longitude,
+      polylineCoords[i].latitude,
+      polylineCoords[i].longitude,
+    )
+    if (distance < minDistance) {
+      minDistance = distance
+      currentIndex = i
+    }
+  }
+  let accumulatedDistance = 0
+  let targetIndex = currentIndex
+  for (let i = currentIndex; i < polylineCoords.length - 1; i++) {
+    const segmentDistance = calculateDistance(
+      polylineCoords[i].latitude,
+      polylineCoords[i].longitude,
+      polylineCoords[i + 1].latitude,
+      polylineCoords[i + 1].longitude,
+    )
+    accumulatedDistance += segmentDistance
+    if (accumulatedDistance >= lookAheadDistance) {
+      targetIndex = i + 1
+      break
+    }
+    targetIndex = i + 1
+  }
+  return calculateBearing(polylineCoords[currentIndex], polylineCoords[targetIndex])
+}
+
+const CAMERA_MODES = {
+  FOLLOW: 'follow',
+  NORTH_UP: 'north_up',
+  OVERVIEW: 'overview',
+}
 
 // Memoized markers for better performance
 const OriginMarker = memo(({ coordinate }) => (
@@ -56,6 +125,12 @@ const MapComponent = ({
 }) => {
   const dispatch = useDispatch()
   const mapRef = useRef(null)
+
+  // Camera mode and navigation state
+  const [cameraMode, setCameraMode] = useState(CAMERA_MODES.FOLLOW)
+  const [polylineCoords, setPolylineCoords] = useState([])
+  const [driverHeading, setDriverHeading] = useState(0)
+  const [prevDriverLocation, setPrevDriverLocation] = useState(null)
 
   // Debug logging to track props
   useEffect(() => {
@@ -140,20 +215,101 @@ const MapComponent = ({
     }
   }, [userOrigin, userDestination, driverLocation, fitCoordinates])
 
-  const initialRegion =
-    userOrigin?.latitude && userOrigin?.longitude
-      ? {
-        latitude: userOrigin.latitude,
-        longitude: userOrigin.longitude,
-        latitudeDelta: 0.005,
-        longitudeDelta: 0.005,
-      }
-      : {
-        latitude: -25.5399,
-        longitude: 28.1,
-        latitudeDelta: 0.005,
-        longitudeDelta: 0.005,
-      }
+  // Calculate bearing when driver moves
+  useEffect(() => {
+    if (driverLocation && prevDriverLocation) {
+      const bearing = calculateBearing(prevDriverLocation, driverLocation)
+      setDriverHeading(bearing)
+    }
+    if (driverLocation) {
+      setPrevDriverLocation(driverLocation)
+    }
+  }, [driverLocation, prevDriverLocation])
+
+  // Update camera based on mode
+  useEffect(() => {
+    if (!mapRef.current || !driverLocation || !tripStarted) return
+
+    let cameraConfig = {}
+
+    switch (cameraMode) {
+      case CAMERA_MODES.FOLLOW:
+        // Follow driver with rotation based on movement
+        cameraConfig = {
+          center: {
+            latitude: driverLocation.latitude,
+            longitude: driverLocation.longitude,
+          },
+          heading: driverHeading,
+          pitch: 45,
+          zoom: 18,
+          altitude: 1000,
+        }
+        break
+
+      case CAMERA_MODES.NORTH_UP:
+        // North up view (0 degrees) with destination appearing from top
+        let destinationBearing = 0
+        if (polylineCoords.length > 0) {
+          destinationBearing = getRouteDirection(driverLocation, polylineCoords, 100)
+        } else if (userDestination) {
+          destinationBearing = calculateBearing(driverLocation, userDestination)
+        }
+        
+        cameraConfig = {
+          center: {
+            latitude: driverLocation.latitude,
+            longitude: driverLocation.longitude,
+          },
+          heading: destinationBearing, // Rotate so destination appears from top
+          pitch: 0,
+          zoom: 16,
+          altitude: 1000,
+        }
+        break
+
+      case CAMERA_MODES.OVERVIEW:
+        // Show entire route
+        if (polylineCoords.length > 0) {
+          const lats = polylineCoords.map((coord) => coord.latitude)
+          const lngs = polylineCoords.map((coord) => coord.longitude)
+          const minLat = Math.min(...lats)
+          const maxLat = Math.max(...lats)
+          const minLng = Math.min(...lngs)
+          const maxLng = Math.max(...lngs)
+
+          cameraConfig = {
+            center: {
+              latitude: (minLat + maxLat) / 2,
+              longitude: (minLng + maxLng) / 2,
+            },
+            heading: 0,
+            pitch: 0,
+            zoom: 14,
+            altitude: 2000,
+          }
+        }
+        break
+    }
+
+    if (Object.keys(cameraConfig).length > 0) {
+      mapRef.current.animateCamera(cameraConfig, { duration: 500 })
+    }
+  }, [cameraMode, driverLocation, driverHeading, polylineCoords, userDestination, tripStarted])
+
+  const initialRegion = userOrigin?.latitude && userOrigin?.longitude
+    ? {
+      latitude: userOrigin.latitude,
+      longitude: userOrigin.longitude,
+      latitudeDelta: 0.005,
+      longitudeDelta: 0.005,
+    }
+    : {
+      latitude: -25.5399,
+      longitude: 28.1,
+      latitudeDelta: 0.005,
+      longitudeDelta: 0.005,
+    }
 
   // Optimize directions ready callback
   const onDirectionsReady = useCallback(
@@ -161,6 +317,11 @@ const MapComponent = ({
       console.log('Directions ready:', result)
       dispatch(setDistance(result.distance))
       dispatch(setDuration(result.duration))
+      
+      // Store polyline coordinates for navigation
+      if (result.coordinates?.length > 0) {
+        setPolylineCoords(result.coordinates)
+      }
     },
     [dispatch],
   )
@@ -201,7 +362,10 @@ const MapComponent = ({
         ref={mapRef}
         initialRegion={initialRegion}
         maxZoomLevel={18}
-        showsUserLocation={false} // Added to prevent conflicts
+        showsUserLocation={false}
+        zoomEnabled={true}
+        scrollEnabled={true}
+        rotateEnabled={true}
       >
         {/* Render origin marker */}
         {userOrigin?.latitude && userOrigin?.longitude && !tripStarted && (
@@ -257,6 +421,41 @@ const MapComponent = ({
           ) : null
         )}
       </MapView>
+
+      {/* Camera mode buttons */}
+      {tripStarted && driverLocation && (
+        <View style={styles.cameraControls}>
+          <TouchableOpacity
+            style={[
+              styles.cameraButton,
+              cameraMode === CAMERA_MODES.FOLLOW && styles.activeCameraButton
+            ]}
+            onPress={() => setCameraMode(CAMERA_MODES.FOLLOW)}
+          >
+            <Icon name="navigation" type="material" size={20} color={cameraMode === CAMERA_MODES.FOLLOW ? "#fff" : "#333"} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.cameraButton,
+              cameraMode === CAMERA_MODES.NORTH_UP && styles.activeCameraButton
+            ]}
+            onPress={() => setCameraMode(CAMERA_MODES.NORTH_UP)}
+          >
+            <Icon name="compass" type="material-community" size={20} color={cameraMode === CAMERA_MODES.NORTH_UP ? "#fff" : "#333"} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.cameraButton,
+              cameraMode === CAMERA_MODES.OVERVIEW && styles.activeCameraButton
+            ]}
+            onPress={() => setCameraMode(CAMERA_MODES.OVERVIEW)}
+          >
+            <Icon name="map-outline" type="material-community" size={20} color={cameraMode === CAMERA_MODES.OVERVIEW ? "#fff" : "#333"} />
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   )
 }
@@ -295,6 +494,32 @@ const styles = StyleSheet.create({
   carImage: {
     width: 30,
     height: 30,
+  },
+  cameraControls: {
+    position: 'absolute',
+    bottom: 20,
+    right: 20,
+    flexDirection: 'column',
+    gap: 10,
+  },
+  cameraButton: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    elevation: 5,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.1)',
+  },
+  activeCameraButton: {
+    backgroundColor: '#091E3E',
+    borderColor: '#091E3E',
   },
 })
 

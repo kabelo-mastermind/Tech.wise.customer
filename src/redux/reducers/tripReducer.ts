@@ -1,4 +1,4 @@
-import { TripData, TripAction, SET_TRIP_DATA } from '../actions/tripActions';
+import { TripData, TripAction, SET_TRIP_DATA, CLEAR_TRIP_DATA } from '../actions/tripActions';
 
 // State interface
 export interface TripState {
@@ -20,6 +20,11 @@ const tripReducer = (state: TripState = initialState, action: TripAction): TripS
           ...state.tripData,   // Keep existing data
           ...action.payload,   // Merge new data
         },
+      };
+    case CLEAR_TRIP_DATA:
+      return {
+        ...state,
+        tripData: {}, // Reset to empty object
       };
     default:
       return state;

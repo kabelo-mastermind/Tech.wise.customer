@@ -27,7 +27,7 @@ const MAX_DISTANCE_KM = 200 // Maximum allowed distance in kilometers
 
 export default function RequestScreen({ navigation }) {
   const user = useSelector((state) => state.auth.user)
-  console.log("from logged in user))))))))))))))", user);
+  // console.log("from logged in user))))))))))))))", user);
 
   const dispatch = useDispatch()
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -370,7 +370,7 @@ export default function RequestScreen({ navigation }) {
       <LoadingState
         message="Login verification is taking longer than expected. Please login again."
         showButton={true}
-        buttonText="Go back"
+        buttonText="Login"
         onButtonPress={() => {
           navigation.replace("LogoutPage"); // Redirect to login screen
         }}
