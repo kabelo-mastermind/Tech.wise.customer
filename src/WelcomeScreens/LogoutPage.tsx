@@ -5,6 +5,7 @@ import { signOut } from "firebase/auth";
 import { useDispatch } from "react-redux";
 import { setUser } from "../redux/actions/authActions"; // Import the setUser action
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { removeStoredUser } from "../utils/storage";
 
 const LogoutPage = ({ navigation }) => {
   const dispatch = useDispatch(); // Redux dispatch function
@@ -19,8 +20,11 @@ const LogoutPage = ({ navigation }) => {
         dispatch(setUser(null)); // Reset user state to null or an empty object
 
         // Clear any persisted data in AsyncStorage
+        await removeStoredUser(); // Clear cached user data
         await AsyncStorage.removeItem('userId');
         await AsyncStorage.removeItem('emailVerified');
+        await AsyncStorage.removeItem('user_id');
+        await AsyncStorage.removeItem('customer_code');
 
         // Redirect to Login Screen
         navigation.reset({

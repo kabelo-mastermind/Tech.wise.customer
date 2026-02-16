@@ -121,7 +121,11 @@ const MapComponent = ({
   onDestinationDrag,
   onDestinationDragEnd,
   onDestinationDragStart, // Added this prop
-  showDirections = true // Default to true
+  showDirections = true, // Default to true
+  onMapLongPress, // callback when user long-presses map
+  onMapPress, // callback for single tap
+  pinCoordinate, // temporary pin to render
+  isConnected = true, // network state
 }) => {
   const dispatch = useDispatch()
   const mapRef = useRef(null)
@@ -366,6 +370,12 @@ const MapComponent = ({
         zoomEnabled={true}
         scrollEnabled={true}
         rotateEnabled={true}
+        onLongPress={(e) => {
+          if (onMapLongPress) onMapLongPress(e.nativeEvent.coordinate)
+        }}
+        onPress={(e) => {
+          if (onMapPress) onMapPress(e.nativeEvent.coordinate)
+        }}
       >
         {/* Render origin marker */}
         {userOrigin?.latitude && userOrigin?.longitude && !tripStarted && (
@@ -387,8 +397,17 @@ const MapComponent = ({
           <DriverMarker coordinate={driverLocation} />
         )}
 
+        {/* Render temporary pin if provided */}
+        {pinCoordinate && pinCoordinate.latitude && pinCoordinate.longitude && (
+          <Marker coordinate={pinCoordinate} anchor={{ x: 0.5, y: 1 }}>
+            <View style={styles.pinMarkerContainer}>
+              <Icon type="material-community" name="map-marker-radius" size={40} color="#FF9800" />
+            </View>
+          </Marker>
+        )}
+
         {/* Render directions based on trip status */}
-        {showDirections && userDestination?.latitude && userDestination?.longitude && (
+        {showDirections && isConnected && userDestination?.latitude && userDestination?.longitude && (
           tripStarted && driverLocation?.latitude && driverLocation?.longitude ? (
             // During trip: Show directions from driver to destination
             <MapViewDirections
@@ -420,7 +439,10 @@ const MapComponent = ({
             />
           ) : null
         )}
+          {/* If offline, optionally show a simple polyline? For now skip directions when offline */}
       </MapView>
+
+        {/* Map long press handled at MapView level */}
 
       {/* Camera mode buttons */}
       {tripStarted && driverLocation && (
@@ -520,6 +542,15 @@ const styles = StyleSheet.create({
   activeCameraButton: {
     backgroundColor: '#091E3E',
     borderColor: '#091E3E',
+  },
+  pinMarkerContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    elevation: 5,
   },
 })
 

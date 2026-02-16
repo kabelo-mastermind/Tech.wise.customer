@@ -6,6 +6,8 @@ import Icon from "react-native-vector-icons/MaterialCommunityIcons"
 import { api } from "../../api"
 import axios from "axios"
 import socket, { connectSocket, disconnectSocket, listenToFoodOrderUpdates } from "../configSocket/socketConfig" // Adjust path as needed
+import NetInfo from '@react-native-community/netinfo'
+import { saveCachedCustomerRating, getCachedCustomerRating } from '../utils/storage'
 import { Socket } from "socket.io-client"
 import { useDispatch, useSelector } from 'react-redux';
 import { updateOrderDetails, updateOrderDriverId } from '../redux/actions/orderDetailsAction';
@@ -84,9 +86,29 @@ const CustomDrawer = ({ isOpen, toggleDrawer, navigation, currentScreen }) => {
   // Fetch customer rating from the server
   useEffect(() => {
     if (!user_id) return
-
     const fetchCustomerRating = async () => {
       try {
+        // If offline, use cached rating
+        let isConnected = true
+        if (NetInfo && typeof NetInfo.fetch === 'function') {
+          try {
+            const state = await NetInfo.fetch()
+            isConnected = !!state.isConnected
+          } catch (e) {
+            isConnected = true
+          }
+        }
+
+        if (!isConnected) {
+          const cached = await getCachedCustomerRating(user_id)
+          if (cached && cached.rating != null) {
+            setRating(Number(cached.rating))
+            return
+          }
+          setRating(null)
+          return
+        }
+
         const res = await axios.get(`${api}/tripHistory/${user_id}`, {
           params: {
             customerId: user_id,
@@ -108,12 +130,21 @@ const CustomDrawer = ({ isOpen, toggleDrawer, navigation, currentScreen }) => {
             0
           )
           const avg = total / ratedTrips.length
-          setRating(Number(avg.toFixed(1)))
+          const rounded = Number(avg.toFixed(1))
+          setRating(rounded)
+          // cache for offline use
+          try { await saveCachedCustomerRating(user_id, rounded) } catch (e) {}
         } else {
           setRating(null)
+          try { await saveCachedCustomerRating(user_id, null) } catch (e) {}
         }
       } catch (err) {
         console.error("Error fetching customer rating:", err)
+        // fallback to cached rating on error
+        try {
+          const cached = await getCachedCustomerRating(user_id)
+          if (cached && cached.rating != null) setRating(Number(cached.rating))
+        } catch (e) {}
       }
     }
 

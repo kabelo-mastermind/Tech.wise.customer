@@ -63,7 +63,7 @@ const ChatBot: React.FC<ChatBotProps> = ({ onClose, navigation }) => {
             rides: "NthomeRides - Your reliable ride, anytime, anywhere with real-time tracking and multiple vehicle options.",
             air: "NthomeAir - Elevate your travel experience with premium air travel services.",
             food: "NthomeFood - Delicious meals delivered to your doorstep (Coming Soon).",
-            shop: "NthomeShop - Shop your favorite items with fast delivery (Coming Soon)."
+            van: "NthomeVan - Move your belongings and heavy items anywhere in South Africa with our reliable van service (Coming Soon)."
         },
         features: {
             customer: [

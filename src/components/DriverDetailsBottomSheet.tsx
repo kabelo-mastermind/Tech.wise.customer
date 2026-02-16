@@ -18,6 +18,9 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { DestinationContext, OriginContext } from "../contexts/contexts"
 import { DriverOriginContext } from "../contexts/driverContexts"
 import axios from "axios"
+import NetInfo from '@react-native-community/netinfo'
+import { saveCachedDriverRating, getCachedDriverRating } from '../utils/storage'
+import { addPendingUpdate, getPendingUpdates } from '../utils/storage'
 import { useSelector } from "react-redux"
 import { useDispatch } from "react-redux"
 import { setTripData } from "../redux/actions/tripActions"
@@ -52,6 +55,8 @@ const DriverDetailsBottomSheet = ({ navigation, route }) => {
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("Cash")
   const [lastFourDigits, setLastFourDigits] = useState("")
   const [isLoading, setIsLoading] = useState(false)
+  const [isConnected, setIsConnected] = useState(true)
+  const [pendingCount, setPendingCount] = useState(0)
 
   // Calculate responsive height based on screen size and safe area
   const getBottomSheetHeight = () => {
@@ -96,6 +101,18 @@ const displayClass = classMap[classType] || classType;
       blurListener()
     }
   }, [navigation, slideAnim])
+
+  const handleClosePreserveDestination = () => {
+    // capture current destination
+    const currentDest = destination;
+    navigation.goBack();
+    // restore if some other logic cleared it during navigation
+    setTimeout(() => {
+      if (currentDest && (!destination || !destination.latitude)) {
+        dispatchDestination({ type: 'ADD_DESTINATION', payload: currentDest });
+      }
+    }, 120);
+  }
 
   const formatETA = (etaMinutes) => {
     if (etaMinutes >= 90) {
@@ -146,6 +163,27 @@ const displayClass = classMap[classType] || classType;
     connectSocket(user_id, userType)
   }, [user_id, userType])
 
+  useEffect(() => {
+    let unsubscribe = () => {}
+    if (NetInfo && typeof NetInfo.addEventListener === 'function') {
+      unsubscribe = NetInfo.addEventListener(state => {
+        setIsConnected(!!state.isConnected)
+      })
+    }
+
+    // initialize pending count
+    (async () => {
+      try {
+        const list = await getPendingUpdates();
+        setPendingCount(list.filter(i => i.type === 'trip_request').length)
+      } catch (e) {}
+    })()
+
+    return () => {
+      try { unsubscribe(); } catch (e) {}
+    }
+  }, [])
+
   const handleButtonClick = async () => {
     if (selectedPaymentMethod) {
       setIsLoading(true)
@@ -161,6 +199,37 @@ const displayClass = classMap[classType] || classType;
           driverStatus: driverStatus,
         }
 
+        // If offline, enqueue the trip and show queued UI
+        const net = await NetInfo.fetch()
+        if (!net.isConnected) {
+          const pending = {
+            type: 'trip_request',
+            payload: {
+              tripData,
+              paymentData: {
+                paymentType: selectedPaymentMethod,
+                amount: carData.price,
+                paymentDate: extractedData.requestDate,
+                user_id: user_id,
+              },
+            },
+          }
+
+          const createdAt = await addPendingUpdate(pending)
+          // update pending count
+          const list = await getPendingUpdates()
+          setPendingCount(list.filter(i => i.type === 'trip_request').length)
+
+          // Mark local trip as queued and navigate to loading screen with a pending id
+          const pendingTripId = `pending-${createdAt}`
+          const queuedTrip = { ...tripData, tripId: pendingTripId, queued: true }
+          dispatch(setTripData(queuedTrip))
+          Alert.alert('Offline', 'You are offline. Your trip has been queued and will be submitted when online.')
+          navigation.navigate('TripLoadingResponse', { tripId: pendingTripId, pendingCreatedAt: createdAt })
+          return
+        }
+
+        // Online: proceed as before
         const tripResponse = await axios.post(`${api}trips`, tripData, {
           timeout: 60000,
         })
@@ -178,16 +247,39 @@ const displayClass = classMap[classType] || classType;
           user_id: user_id,
         }
 
-        // if (selectedPaymentMethod === "Cash") {
-          await axios.post(api + "payment", paymentData)
-        // }
+        await axios.post(api + "payment", paymentData)
 
         emitTripRequestToDrivers(tripData, extractedData.driverId)
         dispatch(setTripData(tripData))
         navigation.navigate("TripLoadingResponse", {tripId: tripResponse.data.tripId})
       } catch (error) {
         console.error("Error saving trip data:", error)
-        Alert.alert("Error", "Failed to save trip data.")
+        // On failure, attempt to queue the trip
+        try {
+          const pending = {
+            type: 'trip_request',
+            payload: {
+              tripData,
+              paymentData: {
+                paymentType: selectedPaymentMethod,
+                amount: carData.price,
+                paymentDate: extractedData.requestDate,
+                user_id: user_id,
+              },
+            },
+          }
+          const createdAt = await addPendingUpdate(pending)
+          const list = await getPendingUpdates()
+          setPendingCount(list.filter(i => i.type === 'trip_request').length)
+          const pendingTripId = `pending-${createdAt}`
+          const queuedTrip = { ...tripData, tripId: pendingTripId, queued: true }
+          dispatch(setTripData(queuedTrip))
+          Alert.alert('Queued', 'Request saved locally and will be submitted when online.')
+          navigation.navigate('TripLoadingResponse', { tripId: pendingTripId, pendingCreatedAt: createdAt })
+          return
+        } catch (e) {
+          Alert.alert("Error", "Failed to save trip data.")
+        }
       } finally {
         setIsLoading(false)
       }
@@ -212,34 +304,54 @@ const displayClass = classMap[classType] || classType;
   // Fetch driver rating from the server
 useEffect(() => {
   const fetchDriverRating = async () => {
+    if (!driver_id) return
     try {
+      let isConnected = true
+      if (NetInfo && typeof NetInfo.fetch === 'function') {
+        try { const s = await NetInfo.fetch(); isConnected = !!s.isConnected } catch (e) { isConnected = true }
+      }
+
+      if (!isConnected) {
+        // offline: use cached driver rating
+        try {
+          const cached = await getCachedDriverRating(String(driver_id))
+          if (cached && cached.rating != null) {
+            setDriverRating(Number(cached.rating))
+            return
+          }
+        } catch (e) {}
+        setDriverRating(null)
+        return
+      }
+
       const res = await axios.get(`${api}/allTrips`, {
         params: { driverId: driver_id },
       });
 
-      const trips = res.data?.data; // <-- access the array inside 'data'
-
+      const trips = res.data?.data;
       if (!Array.isArray(trips)) {
-        console.error("Expected trips to be an array, got:", trips);
         setDriverRating(null);
         return;
       }
 
-      // Filter out null ratings
-      const ratedTrips = trips.filter(trip => trip.driver_ratings !== null);
-
-
+      const ratedTrips = trips.filter(trip => trip.driver_ratings !== null && !isNaN(Number(trip.driver_ratings)));
       if (ratedTrips.length > 0) {
         const total = ratedTrips.reduce((sum, trip) => sum + parseFloat(trip.driver_ratings), 0);
         const avg = total / ratedTrips.length;
-        setDriverRating(avg);
+        const rounded = Number(avg.toFixed(1))
+        setDriverRating(rounded);
+        try { await saveCachedDriverRating(String(driver_id), rounded) } catch (e) {}
       } else {
         setDriverRating(null);
+        try { await saveCachedDriverRating(String(driver_id), null) } catch (e) {}
       }
-
     } catch (err) {
       console.error("Error fetching driver rating:", err);
-      setDriverRating(null);
+      // fallback to cached rating
+      try {
+        const cached = await getCachedDriverRating(String(driver_id))
+        if (cached && cached.rating != null) setDriverRating(Number(cached.rating))
+      } catch (e) {}
     }
   };
 
@@ -273,7 +385,7 @@ useEffect(() => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <Pressable onPress={() => navigation.navigate("CarListingBottomSheet")} style={styles.overlay} />
+      <Pressable onPress={handleClosePreserveDestination} style={styles.overlay} />
 
       {isBlurVisible && (
         <Animated.View style={[styles.bottomSheet, {
@@ -291,7 +403,12 @@ useEffect(() => {
 
             <View style={styles.headerContainer}>
               <Text style={styles.headerText}>Driver Details</Text>
-              <Pressable onPress={() => navigation.navigate("RequestScreen")} style={styles.cancelButton}>
+              {pendingCount > 0 && (
+                <View style={styles.pendingBadge}>
+                  <Text style={styles.pendingBadgeText}>{pendingCount} pending</Text>
+                </View>
+              )}
+              <Pressable onPress={handleClosePreserveDestination} style={styles.cancelButton}>
                 <Icon name="close" type="material-community" size={24} color="#FF3B30" />
               </Pressable>
             </View>
@@ -661,5 +778,18 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     marginLeft: 8,
+  },
+  pendingBadge: {
+    backgroundColor: '#FFD166',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
+    marginLeft: 10,
+  },
+  pendingBadgeText: {
+    color: '#000',
+    fontSize: 12,
+    fontWeight: '600',
   },
 })

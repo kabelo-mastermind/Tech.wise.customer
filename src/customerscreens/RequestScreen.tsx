@@ -1,7 +1,7 @@
 "use client"
 
 import { useContext, useState, useEffect, useRef } from "react"
-import { StyleSheet, View, Dimensions, TouchableOpacity, Text, Modal, Image } from "react-native"
+import { StyleSheet, View, Dimensions, TouchableOpacity, Text, Modal, Image, Animated, PanResponder } from "react-native"
 import MapComponent from "../components/MapComponent"
 import { colors } from "../global/styles"
 import {
@@ -11,6 +11,8 @@ import {
 import { GOOGLE_MAPS_APIKEY } from "@env"
 import { DestinationContext, OriginContext } from "../contexts/contexts"
 import * as Location from "expo-location"
+import NetInfo from '@react-native-community/netinfo'
+import { addPendingUpdate, getPendingUpdates, getRecentDestinations, addRecentDestination } from '../utils/storage'
 import { Icon } from "react-native-elements"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { useSelector, useDispatch } from "react-redux"
@@ -20,12 +22,13 @@ import { api } from "../../api"
 import { LinearGradient } from "expo-linear-gradient"
 import { setUser } from "../redux/actions/authActions" // Import the action to update user in Redux
 import LoadingState from "../components/LoadingState"
+import { Platform } from 'react-native'
 
 const SCREEN_HEIGHT = Dimensions.get("window").height
 const FETCH_INTERVAL = 30000 // Fetch customer code every 30 seconds
 const MAX_DISTANCE_KM = 200 // Maximum allowed distance in kilometers
 
-export default function RequestScreen({ navigation }) {
+export default function RequestScreen({ navigation, route }) {
   const user = useSelector((state) => state.auth.user)
   // console.log("from logged in user))))))))))))))", user);
 
@@ -49,6 +52,74 @@ export default function RequestScreen({ navigation }) {
   const [currentAddress, setCurrentAddress] = useState('');
   const [isDragging, setIsDragging] = useState(false); // Track if marker is being dragged
   const [showDirections, setShowDirections] = useState(false);
+  const [isConnected, setIsConnected] = useState(true)
+  const [showPinModal, setShowPinModal] = useState(false)
+  const [pinCoord, setPinCoord] = useState(null)
+  const [pinMode, setPinMode] = useState(false)
+  const [hasPendingTrips, setHasPendingTrips] = useState(false)
+  const [recentDestinations, setRecentDestinations] = useState([])
+  const [showRecents, setShowRecents] = useState(true)
+  // Animated pan for draggable floating pin
+  const pinPan = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
+  const movedRef = useRef(false);
+  const pinScale = useRef(new Animated.Value(1)).current;
+  const holdTimer = useRef<number | null>(null);
+  const isHeld = useRef(false);
+  const HOLD_DELAY = 250; // ms required to start dragging
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {
+        // require a short hold before activating drag to match typical draggable UX
+        isHeld.current = false
+        if (holdTimer.current) {
+          clearTimeout(holdTimer.current as any)
+        }
+        holdTimer.current = setTimeout(() => {
+          isHeld.current = true
+          // visual pop and prepare for dragging
+          Animated.spring(pinScale, { toValue: 1.12, useNativeDriver: true }).start()
+          try {
+            const x = (pinPan as any).x && (pinPan as any).x._value ? (pinPan as any).x._value : 0
+            const y = (pinPan as any).y && (pinPan as any).y._value ? (pinPan as any).y._value : 0
+            pinPan.setOffset({ x, y })
+            pinPan.setValue({ x: 0, y: 0 })
+          } catch (e) {
+            // ignore
+          }
+        }, HOLD_DELAY)
+        movedRef.current = false
+      },
+      onPanResponderMove: (evt, gestureState) => {
+        // only move after hold threshold
+        if (!isHeld.current) return
+        if (Math.abs(gestureState.dx) > 4 || Math.abs(gestureState.dy) > 4) movedRef.current = true
+        pinPan.setValue({ x: gestureState.dx, y: gestureState.dy })
+      },
+      onPanResponderRelease: () => {
+        // clear any pending hold timer
+        if (holdTimer.current) {
+          clearTimeout(holdTimer.current as any)
+          holdTimer.current = null
+        }
+        // only restore scale if we had activated hold/drag
+        if (isHeld.current) {
+          Animated.spring(pinScale, { toValue: 1, useNativeDriver: true }).start()
+        }
+        try {
+          if (!isHeld.current) {
+            // short tap: toggle pin mode
+            setPinMode(p => !p)
+          }
+          // flatten offset so position persists when we did drag
+          if (isHeld.current) pinPan.flattenOffset()
+        } catch (e) {
+          // ignore
+        }
+        isHeld.current = false
+      },
+    })
+  ).current;
   // Function to calculate distance between two coordinates using Haversine formula
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
     const R = 6371 // Earth radius in kilometers
@@ -79,6 +150,18 @@ export default function RequestScreen({ navigation }) {
   // Function to reverse geocode coordinates to address
   const reverseGeocode = async (coordinate) => {
     try {
+      const net = await NetInfo.fetch();
+      if (!net.isConnected) {
+        // enqueue a pending resolution for later when online
+        try {
+          await addPendingUpdate({ type: 'reverse_geocode', payload: { coordinate } });
+        } catch (e) {
+          // ignore enqueue errors
+        }
+        // Return a friendly fallback using coordinates
+        return `Location (${coordinate.latitude.toFixed(4)}, ${coordinate.longitude.toFixed(4)})`;
+      }
+
       const addressArray = await Location.reverseGeocodeAsync({
         latitude: coordinate.latitude,
         longitude: coordinate.longitude
@@ -97,10 +180,10 @@ export default function RequestScreen({ navigation }) {
 
         return formattedAddress;
       }
-      return "Unknown location";
+      return `Location (${coordinate.latitude.toFixed(4)}, ${coordinate.longitude.toFixed(4)})`;
     } catch (error) {
       console.error("Reverse geocoding error:", error);
-      return "Unknown location";
+      return `Location (${coordinate.latitude.toFixed(4)}, ${coordinate.longitude.toFixed(4)})`;
     }
   }
 
@@ -145,6 +228,8 @@ export default function RequestScreen({ navigation }) {
         payload: finalDestination,
       });
 
+      try { await addRecentDestination(finalDestination) } catch(e){}
+
       // Update the destination input field with the actual address
       if (destinationRef.current) {
         destinationRef.current.setAddressText(address);
@@ -178,6 +263,13 @@ export default function RequestScreen({ navigation }) {
       setIsDragging(false);
     }
   };
+
+    // Handle single tap on map when pin mode is active
+    const handleMapPress = async (coordinate) => {
+      if (!pinMode) return
+      setPinCoord(coordinate)
+      // show quick action bar (not modal)
+    }
 
 
   // Function to fetch customer code from the database
@@ -226,6 +318,39 @@ export default function RequestScreen({ navigation }) {
     }
   }, [user?.user_id])
 
+  // refresh pending trips indicator when screen focuses
+  useEffect(() => {
+    const loadPending = async () => {
+      try {
+        const list = await getPendingUpdates();
+        const trips = list.filter(i => i.type === 'trip_request')
+        setHasPendingTrips(trips.length > 0)
+      } catch (e) {
+        setHasPendingTrips(false)
+      }
+    }
+
+    const loadRecent = async () => {
+      try {
+        const recents = await getRecentDestinations(8)
+        setRecentDestinations(recents)
+      } catch (e) {
+        setRecentDestinations([])
+      }
+    }
+
+    const unsubscribe = navigation.addListener('focus', () => {
+      loadPending();
+      loadRecent();
+    })
+
+    // initial
+    loadPending();
+    loadRecent();
+
+    return unsubscribe
+  }, [navigation])
+
   const getCurrentLocation = async () => {
     // if (locationFetched) return
     // setLocationFetched(true)
@@ -244,22 +369,18 @@ export default function RequestScreen({ navigation }) {
       if (coords) {
         const { latitude, longitude } = coords
 
-        const addressArray = await Location.reverseGeocodeAsync({ latitude, longitude })
+        const address = await reverseGeocode({ latitude, longitude })
 
-        if (addressArray.length > 0) {
-          const address = `${addressArray[0].name}, ${addressArray[0].street}, ${addressArray[0].city}, ${addressArray[0].region}, ${addressArray[0].country}`
+        setCurrentAddress(address);
 
-          setCurrentAddress(address);
-
-          if (originRef.current) {
-            originRef.current.setAddressText(address)
-          }
-
-          dispatchOrigin({
-            type: "ADD_ORIGIN",
-            payload: { latitude, longitude, address },
-          })
+        if (originRef.current) {
+          originRef.current.setAddressText(address)
         }
+
+        dispatchOrigin({
+          type: "ADD_ORIGIN",
+          payload: { latitude, longitude, address },
+        })
       }
     } catch (error) {
       console.error("Error fetching location:", error)
@@ -297,7 +418,36 @@ export default function RequestScreen({ navigation }) {
       getCurrentLocation();
       setLocationFetched(true); // only used here
     }
+    // subscribe to network state
+    let unsubscribeNet = () => {}
+    if (NetInfo && typeof NetInfo.addEventListener === 'function') {
+      unsubscribeNet = NetInfo.addEventListener(state => {
+        setIsConnected(state.isConnected ?? false)
+      })
+    }
+
+    if (NetInfo && typeof NetInfo.fetch === 'function') {
+      NetInfo.fetch().then(state => setIsConnected(state.isConnected ?? false)).catch(() => {})
+    }
+
+    return () => { try { unsubscribeNet(); } catch (e) {} }
   }, []);
+
+  // Ensure the destination input text matches `destination.address` when destination changes
+  useEffect(() => {
+    if (destinationRef && destinationRef.current && destination && destination.address) {
+      try {
+        // small delay to ensure input is mounted
+        setTimeout(() => {
+          if (destinationRef.current && destinationRef.current.setAddressText) {
+            destinationRef.current.setAddressText(destination.address);
+          }
+        }, 50);
+      } catch (e) {
+        // ignore
+      }
+    }
+  }, [destination?.address]);
 
   // ✅ UseEffect with delay 2-5 delays before navigating
   useEffect(() => {
@@ -332,6 +482,19 @@ export default function RequestScreen({ navigation }) {
       };
     }
   }, [destination?.latitude, destination?.longitude]);
+
+  // Accept preset destination from navigation params (HomeScreen quick-tap)
+  useEffect(() => {
+    const preset = route?.params?.presetDestination
+    if (preset) {
+      const payload = { latitude: preset.latitude, longitude: preset.longitude, address: preset.address || preset.name }
+      dispatchDestination({ type: 'ADD_DESTINATION', payload })
+      if (destinationRef.current && destinationRef.current.setAddressText) destinationRef.current.setAddressText(payload.address)
+      try { addRecentDestination(payload) } catch (e) {}
+      // clear param so it doesn't re-fire
+      try { navigation.setParams({ presetDestination: null }) } catch(e){}
+    }
+  }, [route?.params])
 
   const clearOrigionAddress = () => {
     if (originRef.current) {
@@ -395,6 +558,9 @@ export default function RequestScreen({ navigation }) {
                 <Icon type="material-community" name="menu" color={"#0DCAF0"} size={30} />
               </TouchableOpacity>
 
+              {/* Center spacer (pin moved to floating button) */}
+              <View style={{ flex: 1 }} />
+
               {/* Right: Profile picture */}
               <TouchableOpacity onPress={() => navigation.navigate("Profile")} style={styles.profileButton}>
                 <Image
@@ -403,6 +569,7 @@ export default function RequestScreen({ navigation }) {
                 />
               </TouchableOpacity>
             </View>
+            {/* Note: global NetworkBanner handles offline notification; local banner removed */}
 
 
             <View style={[styles.inputContainer, autoCompleteStyles.inputStackContainer]}>
@@ -435,6 +602,12 @@ export default function RequestScreen({ navigation }) {
                   language: "en",
                 }}
                 styles={autoCompleteStyles}
+                textInputProps={{
+                  onFocus: () => setShowRecents(false),
+                  onBlur: () => setShowRecents(true),
+                }}
+                onFocus={() => setShowRecents(false)}
+                onBlur={() => setShowRecents(true)}
                 nearbyPlacesAPI="GooglePlacesSearch"
               />
               <TouchableOpacity style={styles.clearButton} onPress={clearOrigionAddress}>
@@ -454,7 +627,7 @@ export default function RequestScreen({ navigation }) {
                 minLength={2}
                 enablePoweredByContainer={false}
                 fetchDetails={true}
-                onPress={(data, details = null) => {
+                onPress={async (data, details = null) => {
                   // console.log('Destination selected:', data, details)
                   if (details) {
                     // Check if user has a customer code before setting destination
@@ -485,6 +658,7 @@ export default function RequestScreen({ navigation }) {
                       type: "ADD_DESTINATION",
                       payload: newDestination,
                     })
+                    try { await addRecentDestination(newDestination) } catch(e){}
                   }
                 }}
                 onFail={error => console.log('Destination autocomplete error:', error)}
@@ -494,6 +668,12 @@ export default function RequestScreen({ navigation }) {
                   language: "en",
                 }}
                 styles={autoCompleteStyles}
+                textInputProps={{
+                  onFocus: () => setShowRecents(false),
+                  onBlur: () => setShowRecents(true),
+                }}
+                onFocus={() => setShowRecents(false)}
+                onBlur={() => setShowRecents(true)}
                 nearbyPlacesAPI="GooglePlacesSearch"
               />
               <TouchableOpacity style={[styles.clearButton1]} onPress={clearDestinationAddress}>
@@ -502,8 +682,47 @@ export default function RequestScreen({ navigation }) {
             </View>
           </View>
         </View>
+        
+        {/* Recent destinations quick list */}
+        {recentDestinations && recentDestinations.length > 0 && showRecents && !drawerOpen && (
+          <View style={styles.recentContainer}>
+            <Text style={styles.recentHeader}>Recent Destinations</Text>
+            <Animated.ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.recentList}
+            >
+              {recentDestinations.map((item, idx) => (
+                <TouchableOpacity
+                  key={item.savedAt || idx}
+                  style={styles.recentChip}
+                  onPress={async () => {
+                    const payload = { latitude: item.latitude, longitude: item.longitude, address: item.address || item.name }
+                    dispatchDestination({ type: 'ADD_DESTINATION', payload })
+                    if (destinationRef.current && destinationRef.current.setAddressText) destinationRef.current.setAddressText(payload.address)
+                    try { await addRecentDestination(payload) } catch(e){}
+                    navigation.navigate('CarListingBottomSheet')
+                  }}
+                >
+                  <Text style={styles.recentChipText}>{item.name || item.address}</Text>
+                </TouchableOpacity>
+              ))}
+            </Animated.ScrollView>
+          </View>
+        )}
 
-        <MapComponent key={mapKey} userOrigin={origin} userDestination={destination} onDestinationDrag={handleDestinationDrag} onDestinationDragEnd={handleDestinationDragEnd} showDirections={showDirections} />
+        <MapComponent
+          key={mapKey}
+          userOrigin={origin}
+          userDestination={destination}
+          onDestinationDrag={handleDestinationDrag}
+          onDestinationDragEnd={handleDestinationDragEnd}
+          showDirections={showDirections}
+          onMapLongPress={null}
+          onMapPress={handleMapPress}
+          pinCoordinate={pinCoord}
+          isConnected={isConnected}
+        />
         {/* Show loading indicator while reverse geocoding during drag */}
         {isDragging && (
           <View style={styles.draggingIndicator}>
@@ -560,6 +779,47 @@ export default function RequestScreen({ navigation }) {
           </Modal>
         )}
 
+          {/* Quick action bar for pin (appears when pinCoord is set) */}
+          {pinCoord && (
+            <View style={styles.pinActionBar} pointerEvents="box-none">
+              <View style={styles.pinActionInner}>
+                <TouchableOpacity
+                  style={styles.profileButton2}
+                  onPress={async () => {
+                    // Set as pickup
+                    const addr = await reverseGeocode(pinCoord)
+                    const originPayload = { latitude: pinCoord.latitude, longitude: pinCoord.longitude, address: addr }
+                    dispatchOrigin({ type: 'ADD_ORIGIN', payload: originPayload })
+                    if (originRef.current) originRef.current.setAddressText(addr)
+                    // clear pin marker but stay in pin mode
+                    setPinCoord(null)
+                  }}
+                >
+                  <Text style={styles.profileButtonText}>Set Pickup</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.laterButton, { marginLeft: 8 }]}
+                  onPress={async () => {
+                    // Set as destination
+                    const addr = await reverseGeocode(pinCoord)
+                    const destPayload = { latitude: pinCoord.latitude, longitude: pinCoord.longitude, address: addr, name: addr.split(',')[0] }
+                    dispatchDestination({ type: 'ADD_DESTINATION', payload: destPayload })
+                    if (destinationRef.current) destinationRef.current.setAddressText(addr)
+                        try { await addRecentDestination(destPayload) } catch(e){}
+                        setPinCoord(null)
+                  }}
+                >
+                  <Text style={styles.laterButtonText}>Set Destination</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={[styles.cancelPinButton, { marginLeft: 8 }]} onPress={() => setPinCoord(null)}>
+                  <Text style={styles.cancelPinText}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
         {/* Distance Limit Alert Modal */}
         {showDistanceAlert && (
           <Modal
@@ -594,6 +854,29 @@ export default function RequestScreen({ navigation }) {
         )}
 
         <CustomDrawer isOpen={drawerOpen} toggleDrawer={toggleDrawer} navigation={navigation} />
+        {/* Floating pin — draggable */}
+        <Animated.View
+          style={[
+            styles.pinFloating,
+            { transform: [...pinPan.getTranslateTransform(), { scale: pinScale }] },
+            pinMode && styles.pinToggleActive,
+          ]}
+          {...panResponder.panHandlers}
+        >
+          <TouchableOpacity onPress={() => { if (!movedRef.current) setPinMode(p => !p); }} activeOpacity={0.9}>
+            <Icon name="pin" type="material-community" color={pinMode ? '#fff' : '#0DCAF0'} />
+          </TouchableOpacity>
+        </Animated.View>
+
+        {/* Pending button shows only when there are queued trip_request items */}
+        {hasPendingTrips && (
+          <TouchableOpacity
+            style={styles.debugPendingBtn}
+            onPress={() => navigation.navigate('PendingRequests')}
+          >
+            <Text style={{ color: '#fff', fontWeight: '700' }}>Pending</Text>
+          </TouchableOpacity>
+        )}
       </SafeAreaView>
     </View>
   )
@@ -726,6 +1009,66 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 30,
     zIndex: 10,
+  },
+  pinToggleButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#0DCAF0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    marginTop: 8,
+  },
+  pinToggleActive: {
+    backgroundColor: '#0DCAF0',
+    borderColor: '#0DCAF0',
+  },
+  pinActionBar: {
+    position: 'absolute',
+    bottom: 30,
+    left: 16,
+    right: 16,
+    alignItems: 'center',
+    zIndex: 999,
+  },
+  pinActionInner: {
+    flexDirection: 'row',
+    backgroundColor: '#fff',
+    padding: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+  },
+  cancelPinButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: '#f3f4f6',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cancelPinText: {
+    color: '#374151',
+    fontWeight: '600',
+  },
+  offlineBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#D32F2F',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginTop: 10,
+  },
+  offlineText: {
+    color: '#fff',
+    marginLeft: 8,
+    fontSize: 13,
   },
   profilePicture: {
     height: 40,
@@ -885,6 +1228,69 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
   },
+  pinFloating: {
+    position: 'absolute',
+    bottom: 120,
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 6,
+    zIndex: 1000,
+    borderWidth: 1,
+    borderColor: '#0DCAF0',
+  },
+  debugPendingBtn: {
+    position: 'absolute',
+    bottom: 60,
+    right: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 24,
+    backgroundColor: '#111827',
+    zIndex: 1100,
+    elevation: 8,
+  },
+  recentContainer: {
+    position: 'absolute',
+    top: 205,
+    left: 12,
+    right: 12,
+    zIndex: 10,
+  },
+  recentHeader: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0DCAF0',
+    marginBottom: 8,
+  },
+  recentList: {
+    paddingVertical: 6,
+  },
+  recentChip: {
+    backgroundColor: '#fff',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginRight: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  recentChipText: {
+    color: '#111827',
+    fontSize: 13,
+    fontWeight: '600',
+  },
 })
 
 const autoCompleteStyles = {
@@ -918,8 +1324,8 @@ const autoCompleteStyles = {
     top: 50,
     borderRadius: 8,
     marginTop: 5,
-    elevation: 3,
-    zIndex: 1000,
+    elevation: 20,
+    zIndex: 3000,
   },
   inputStackContainer: {
     marginTop: 90,

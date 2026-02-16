@@ -17,8 +17,10 @@ import Icon from "react-native-vector-icons/Feather"
 import CustomDrawer from "../components/CustomDrawer"
 import { useSelector } from "react-redux"
 import axios from "axios"
+import NetInfo from '@react-native-community/netinfo'
+import AsyncStorage from '@react-native-async-storage/async-storage'
 import { api } from "../../api"
-import { LinearGradient } from "expo-linear-gradient"
+// header uses solid color now (no gradient)
 import { showToast } from "../constants/showToast"
 
 const { width } = Dimensions.get("window")
@@ -27,7 +29,9 @@ export default function MyRidesScreen({ navigation }) {
   const [activeTab, setActiveTab] = useState("completed")
   const [isLoading, setIsLoading] = useState(true)
   const [hasError, setHasError] = useState(false)
+  const [isConnected, setIsConnected] = useState(true)
   const [trips, setTrips] = useState([])
+  const [isCachedData, setIsCachedData] = useState(false)
   const [showInfoSection, setShowInfoSection] = useState(true) // New state for info section visibility
 
   // Animation values
@@ -70,9 +74,24 @@ export default function MyRidesScreen({ navigation }) {
   const fetchTrips = async (status) => {
     try {
       setIsLoading(true)
-      const res = await axios.get(api + `tripHistory/${customerId}`, {
-        params: { status: status },
-      })
+      // If offline, load cached trips
+      if (!isConnected) {
+        const key = `trips_${customerId}_${status}`
+        const cached = await AsyncStorage.getItem(key)
+        if (cached) {
+          const data = JSON.parse(cached)
+          const sorted = [...data].sort((a, b) => new Date(b.requestDate) - new Date(a.requestDate))
+          setTrips(sorted)
+          setHasError(false)
+          setIsCachedData(true)
+          showToast('info', 'Offline', 'Showing cached rides')
+          return
+        } else {
+          throw new Error('No network and no cached data')
+        }
+      }
+
+      const res = await axios.get(api + `tripHistory/${customerId}`, { params: { status } })
 
       // Sort trips by requestDate (newest first)
       const sortedTrips = [...res.data].sort((a, b) => {
@@ -83,6 +102,15 @@ export default function MyRidesScreen({ navigation }) {
 
       setTrips(sortedTrips)
       setHasError(false)
+      setIsCachedData(false)
+
+      // Cache the trips for offline use
+      try {
+        const key = `trips_${customerId}_${status}`
+        await AsyncStorage.setItem(key, JSON.stringify(res.data))
+      } catch (e) {
+        console.warn('Failed to cache trips', e)
+      }
     } catch (err) {
       setHasError(true)
       // console.error("Error fetching trips:", err)
@@ -103,6 +131,23 @@ export default function MyRidesScreen({ navigation }) {
       fetchTrips(activeTab)
     }
   }, [activeTab, customerId])
+
+  // Subscribe to network changes
+  useEffect(() => {
+    let unsubscribe = () => {}
+    if (NetInfo && typeof NetInfo.addEventListener === 'function') {
+      unsubscribe = NetInfo.addEventListener((state) => {
+        const connected = state.isConnected ?? false
+        setIsConnected(connected)
+        if (connected) setIsCachedData(false)
+      })
+    }
+    // also check once on mount
+    if (NetInfo && typeof NetInfo.fetch === 'function') {
+      NetInfo.fetch().then((state) => setIsConnected(state.isConnected ?? false)).catch(() => {})
+    }
+    return () => { try { unsubscribe(); } catch (e) {} }
+  }, [])
 
   console.log("Trips================:", trips)
 
@@ -188,19 +233,8 @@ export default function MyRidesScreen({ navigation }) {
           <Text style={styles.tripIdLabel}>Trip ID</Text>
           <Text style={styles.tripId}>#{item.id}</Text>
         </View>
-        <View style={styles.statusContainer}>
-          <Text
-            style={[
-              styles.statusText,
-              item.statuses === "completed"
-                ? styles.completedStatus
-                : item.statuses === "canceled"
-                  ? styles.canceledStatus
-                  : styles.ongoingStatus,
-            ]}
-          >
-            {item.statuses.toUpperCase()}
-          </Text>
+        <View style={[styles.statusContainer, item.statuses === 'completed' ? styles.completedBadge : item.statuses === 'canceled' ? styles.canceledBadge : styles.ongoingBadge]}>
+          <Text style={styles.statusText}>{item.statuses.toUpperCase()}</Text>
         </View>
       </View>
       <View style={styles.locationContainer}>
@@ -237,9 +271,8 @@ export default function MyRidesScreen({ navigation }) {
           <Icon name="clock" size={14} color="#666" />
           <Text style={styles.tripDetailText}>{`${roundToTwo(item?.duration_minutes)} min`}</Text>
         </View>
-        <View style={styles.tripDetail}>
-          <Icon name="credit-card" size={14} color="#666" />
-          <Text style={styles.tripDetailText}>{item.payment_status}</Text>
+        <View style={[styles.tripDetail, { alignItems: 'flex-end' }]}>
+          <Text style={[styles.paymentBadge, item.payment_status === 'paid' ? styles.paidBadge : styles.unpaidBadge]}>{item.payment_status}</Text>
         </View>
       </View>
       {item.cancellation_reason && (
@@ -281,13 +314,8 @@ export default function MyRidesScreen({ navigation }) {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0DCAF0" />
       {/* Header */}
-      <Animated.View style={styles.header}>
-        <LinearGradient
-          colors={["#0DCAF0", "#0AA8CC"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={styles.headerGradient}
-        >
+      <Animated.View style={[styles.header, styles.headerSolid]}>
+        <View style={styles.headerGradient}>
           <View style={styles.headerContent}>
             <TouchableOpacity onPress={toggleDrawer} style={styles.menuButton}>
               <Icon name="menu" color="#fff" size={22} />
@@ -297,8 +325,21 @@ export default function MyRidesScreen({ navigation }) {
               <Icon name="bell" color="#fff" size={22} />
             </TouchableOpacity>
           </View>
-        </LinearGradient>
+        </View>
       </Animated.View>
+      {/* Offline banner for this screen */}
+      {!isConnected && (
+        <View style={styles.offlineBanner}>
+          <Icon name="wifi-off" size={16} color="#fff" />
+          <Text style={styles.offlineText}>No internet connection — showing cached data if available</Text>
+        </View>
+      )}
+      {/* Cached vs Live indicator */}
+      <View style={styles.cachedIndicatorContainer}>
+        <View style={[styles.cachedBadge, isCachedData ? styles.cachedBadgeCached : styles.cachedBadgeLive]}>
+          <Text style={styles.cachedBadgeText}>{isCachedData ? 'Cached' : 'Live'}</Text>
+        </View>
+      </View>
       {/* Tab navigation */}
       <View style={styles.tabContainer}>
         <View style={styles.tabBar}>
@@ -466,7 +507,13 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   headerGradient: {
-    paddingTop: Platform.OS === "android" ? StatusBar.currentHeight : 0,
+    paddingTop: Platform.OS === "android" ? StatusBar.currentHeight : 12,
+    backgroundColor: '#0DCAF0',
+    // keep header compact and solid
+    paddingBottom: 12,
+  },
+  headerSolid: {
+    backgroundColor: '#0DCAF0'
   },
   headerContent: {
     flexDirection: "row",
@@ -528,7 +575,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     width: width / 3,
     height: "100%",
-    backgroundColor: "#00b0ff",
+    backgroundColor: "#0DCAF0",
     borderRadius: 30,
     zIndex: 0,
   },
@@ -582,7 +629,7 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   retryButton: {
-    backgroundColor: "#00b0ff",
+    backgroundColor: "#0DCAF0",
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 24,
@@ -675,13 +722,11 @@ const styles = StyleSheet.create({
   },
   tripCard: {
     backgroundColor: "#fff",
-    borderRadius: 16,
-    padding: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#eef6f7',
+    elevation: 1,
   },
   tripHeader: {
     flexDirection: "row",
@@ -704,22 +749,18 @@ const styles = StyleSheet.create({
   statusContainer: {
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 12,
-    backgroundColor: "#f0f0f0",
+    borderRadius: 14,
+    minWidth: 88,
+    alignItems: 'center',
   },
   statusText: {
     fontSize: 12,
-    fontWeight: "600",
+    fontWeight: "700",
+    color: '#fff'
   },
-  completedStatus: {
-    color: "#4CAF50",
-  },
-  canceledStatus: {
-    color: "#F44336",
-  },
-  ongoingStatus: {
-    color: "#2196F3",
-  },
+  completedBadge: { backgroundColor: '#2E7D32' },
+  canceledBadge: { backgroundColor: '#C62828' },
+  ongoingBadge: { backgroundColor: '#0DCAF0' },
   locationContainer: {
     marginBottom: 16,
   },
@@ -782,6 +823,20 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#666",
     marginLeft: 4,
+  },
+  paymentBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#fff'
+  },
+  paidBadge: {
+    backgroundColor: '#2E7D32'
+  },
+  unpaidBadge: {
+    backgroundColor: '#C62828'
   },
   cancellationContainer: {
     marginTop: 12,
@@ -904,6 +959,39 @@ const styles = StyleSheet.create({
   tipBold: {
     fontWeight: "600",
     color: "#F57C00",
+  },
+  offlineBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#D32F2F',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  offlineText: {
+    color: '#fff',
+    marginLeft: 8,
+    fontSize: 13,
+  },
+  cachedIndicatorContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    alignItems: 'flex-end',
+  },
+  cachedBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  cachedBadgeText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  cachedBadgeLive: {
+    backgroundColor: '#2E7D32',
+  },
+  cachedBadgeCached: {
+    backgroundColor: '#F57C00',
   },
   bottomPadding: {
     height: 20,

@@ -18,7 +18,10 @@ import { Icon } from "react-native-elements"
 import * as ImagePicker from "expo-image-picker"
 import { api } from "../../api"
 import axios from "axios"
-import { useSelector } from "react-redux"
+import { useSelector, useDispatch } from "react-redux"
+import { setUser } from "../redux/actions/authActions"
+import NetInfo from '@react-native-community/netinfo'
+import { addPendingUpdate, getPendingUpdates, removePendingUpdate, saveStoredUser } from '../utils/storage'
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage"
 import { storage } from "../../firebase"
 import CustomDrawer from "../components/CustomDrawer"
@@ -163,6 +166,7 @@ const CustomerProfile = ({ navigation }) => {
 
   const toggleDrawer = useCallback(() => setDrawerOpen((prev) => !prev), [])
   const user = useSelector((state) => state.auth?.user)
+  const dispatch = useDispatch()
   const user_id = user?.user_id
   const username = user?.name
 
@@ -424,34 +428,48 @@ const CustomerProfile = ({ navigation }) => {
 
     setIsSaving(true);
     try {
-      const newCustomerCode = await handleCustomerCreation();
-
-      if (!newCustomerCode) {
-        showToast("error", "Profile Update Failed", "Failed to create payment profile. Please try again.");
-        setIsSaving(false);
-        return;
+      // 1) Attempt to create customer (required step)
+      let newCustomerCode = null
+      try {
+        newCustomerCode = await handleCustomerCreation();
+      } catch (e) {
+        console.warn('create-customer failed', e);
       }
 
-      const response = await axios.put(api + "update-customer", {
+      const payload = {
         ...formData,
         user_id,
         customer_code: newCustomerCode,
-      });
+      };
 
-      if (response.status === 200) {
-        setCustomerData((prev) => ({
-          ...prev,
-          ...formData,
-          customer_code: newCustomerCode,
-        }));
-        showToast("success", "Profile Updated", "Profile updated successfully!");
+      // Try API update
+      try {
+        const response = await axios.put(api + "update-customer", payload);
+        if (response.status === 200) {
+          setCustomerData((prev) => ({ ...prev, ...formData, customer_code: newCustomerCode }));
+          // update redux and cached user
+          const updatedUser = { ...user, ...formData, customer_code: newCustomerCode };
+          dispatch(setUser(updatedUser));
+          await saveStoredUser(updatedUser);
+          showToast("success", "Profile Updated", "Profile updated successfully!");
+          setEditMode(false);
+        } else {
+          throw new Error('Non-200 response');
+        }
+      } catch (err) {
+        // Network or server error: save pending update locally
+        console.warn('Profile update failed, saving offline', err);
+        await addPendingUpdate({ type: 'update-customer', payload });
+
+        // Optimistically update local UI and redux + cache
+        setCustomerData((prev) => ({ ...prev, ...formData, customer_code: newCustomerCode }));
+        const updatedUser = { ...user, ...formData, customer_code: newCustomerCode };
+        dispatch(setUser(updatedUser));
+        await saveStoredUser(updatedUser);
+
+        showToast('info', 'Saved Offline', 'Changes saved locally and will sync when online.');
         setEditMode(false);
-      } else {
-        showToast("error", "Update Failed", "Failed to update profile.");
       }
-    } catch (error) {
-      // console.error("Error updating profile:", error);
-      showToast("error", "Update Failed", "Failed to update profile. Please try again.");
     } finally {
       setIsSaving(false);
     }
@@ -464,6 +482,38 @@ const CustomerProfile = ({ navigation }) => {
       [field]: value,
     }))
   }, [])
+
+  // Listen for connectivity and attempt to sync pending updates when online
+  useEffect(() => {
+    let unsubscribe = () => {}
+    if (NetInfo && typeof NetInfo.addEventListener === 'function') {
+      unsubscribe = NetInfo.addEventListener(async (state) => {
+        if (state.isConnected) {
+          try {
+            const pending = await getPendingUpdates();
+            for (const item of pending) {
+              try {
+                if (item.type === 'update-customer') {
+                  await axios.put(api + 'update-customer', item.payload);
+                }
+                // remove on success
+                await removePendingUpdate(item.createdAt);
+                // also refresh cached user and redux
+                const refreshed = await getPendingUpdates();
+                // no-op: individual success handled above
+              } catch (e) {
+                console.warn('Failed to sync pending update', e);
+              }
+            }
+          } catch (e) {
+            console.warn('Error during pending sync', e);
+          }
+        }
+      })
+    }
+
+    return () => { try { unsubscribe(); } catch (e) {} }
+  }, []);
 
   if (!user || !user.user_id) {
     return (

@@ -44,8 +44,8 @@ const ServiceCard = ({ title, description, isComingSoon, onPress, index }) => {
         return "airplane"
       case "NthomeFood":
         return "restaurant"
-      case "NthomeShop":
-        return "cart"
+      case "NthomeVan":
+        return "bus"
       default:
         return "apps"
     }
@@ -108,16 +108,19 @@ const NthomeServicesScreen = ({ navigation }) => {
   }
 
   const handleAirPress = () => {
-    navigation.navigate("FlightWelcomeScreen")
+    Alert.alert("Coming Soon", "NthomeAir service will be available soon!", [
+      { text: "OK", onPress: () => console.log("OK Pressed") },
+    ])
   }
 
   const handleFoodPress = () => {
-    navigation.navigate("FoodWelcomeScreen")
-
+    Alert.alert("Coming Soon", "NthomeFood service will be available soon!", [
+      { text: "OK", onPress: () => console.log("OK Pressed") },
+    ])
   }
 
-  const handleShopPress = () => {
-    Alert.alert("Coming Soon", "NthomeShop service will be available soon!", [
+  const handleVanPress = () => {
+    Alert.alert("Coming Soon", "NthomeVan service will be available soon!", [
       { text: "OK", onPress: () => console.log("OK Pressed") },
     ])
   }
@@ -197,24 +200,24 @@ const NthomeServicesScreen = ({ navigation }) => {
             <ServiceCard
               title="NthomeFood"
               description="Delicious meals, delivered to your doorstep in minutes."
-              isComingSoon={false}
+              isComingSoon={true}
               onPress={handleFoodPress}
               index={2}
             />
             <ServiceCard
               title="NthomeAir"
               description="Elevate your travel experience with premium air travel."
-              isComingSoon={false}
+              isComingSoon={true}
               onPress={handleAirPress}
               index={1}
             />
-            {/* <ServiceCard
-              title="NthomeShop"
-              description="Shop your favorite items with ease and fast delivery."
+            <ServiceCard
+              title="NthomeVan"
+              description="Move your belongings and heavy items anywhere in South Africa."
               isComingSoon={true}
-              onPress={handleShopPress}
+              onPress={handleVanPress}
               index={3}
-            /> */}
+            />
           </View>
 
           <View style={styles.infoSection}>

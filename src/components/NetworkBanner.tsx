@@ -1,55 +1,73 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { View, Text, StyleSheet, Animated } from "react-native";
 import NetInfo from "@react-native-community/netinfo";
 
+const NETWORK_BANNER_HEIGHT = 44;
+
 const NetworkBanner = () => {
   const [isConnected, setIsConnected] = useState(true);
-  const [slideAnim] = useState(new Animated.Value(-50)); // Start hidden
+  const heightAnim = useRef(new Animated.Value(0)).current; // height in layout
+  const opacityAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    const unsubscribe = NetInfo.addEventListener((state) => {
-      setIsConnected(state.isConnected ?? false);
-    });
+    let unsubscribe = () => {}
+    if (NetInfo && typeof NetInfo.addEventListener === 'function') {
+      unsubscribe = NetInfo.addEventListener((state) => {
+        setIsConnected(state.isConnected ?? false);
+      });
+    }
 
-    return () => unsubscribe();
+    return () => { try { unsubscribe(); } catch (e) {} };
   }, []);
 
   useEffect(() => {
-    Animated.timing(slideAnim, {
-      toValue: isConnected ? -50 : 0, // Hide if connected, show if not
-      duration: 300,
-      useNativeDriver: true,
-    }).start();
-  }, [isConnected]);
+    if (isConnected) {
+      Animated.parallel([
+        Animated.timing(opacityAnim, {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+        Animated.timing(heightAnim, {
+          toValue: 0,
+          duration: 250,
+          useNativeDriver: false,
+        }),
+      ]).start();
+    } else {
+      Animated.parallel([
+        Animated.timing(heightAnim, {
+          toValue: NETWORK_BANNER_HEIGHT,
+          duration: 250,
+          useNativeDriver: false,
+        }),
+        Animated.timing(opacityAnim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [isConnected, heightAnim, opacityAnim]);
 
   return (
-    <Animated.View
-      style={[
-        styles.banner,
-        { transform: [{ translateY: slideAnim }] },
-      ]}
-    >
-      <Text style={styles.text}>
-        {isConnected ? "" : "No Internet Connection"}
-      </Text>
+    <Animated.View style={[styles.banner, { height: heightAnim }]}> 
+      <Animated.View style={{ flex: 1, opacity: opacityAnim, justifyContent: 'center', alignItems: 'center' }}>
+        <Text style={styles.text}>{isConnected ? "" : "No Internet Connection"}</Text>
+      </Animated.View>
     </Animated.View>
   );
 };
 
 const styles = StyleSheet.create({
   banner: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: "red",
-    padding: 10,
-    alignItems: "center",
-    zIndex: 1000,
+    width: '100%',
+    backgroundColor: 'red',
+    overflow: 'hidden',
   },
   text: {
-    color: "white",
-    fontWeight: "bold",
+    color: 'white',
+    fontWeight: 'bold',
   },
 });
 

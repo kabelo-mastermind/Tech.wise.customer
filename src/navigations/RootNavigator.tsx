@@ -44,6 +44,11 @@ import RideRatingScreen from "../customerscreens/RideRatingScreen";
 import ForgotPasswordScreen from "../WelcomeScreens/ForgotPasswordScreen";
 import TermsScreen from "../customerscreens/TermsScreen";
 import { ActivityIndicator, View } from "react-native";
+import { useDispatch } from 'react-redux';
+import { setUser } from '../redux/actions/authActions';
+import { getStoredUser } from '../utils/storage';
+import NetInfo from '@react-native-community/netinfo';
+import { syncPendingUpdates } from '../utils/syncPending';
 
 import BookingForm from "../NthomeAir/BookingForm";
 import BookingList from "../NthomeAir/BookingList";
@@ -59,6 +64,7 @@ import RestaurantDetailScreen from "../NthomeFood/RestaurantDetailScreen";
 import CartScreen from "../NthomeFood/CartScreen";
 import OrderTrackingScreen from "../NthomeFood/OrderTrackingScreen";
 import OrderHistory from "../NthomeFood/OrderHistory";
+import PendingRequestsScreen from '../customerscreens/PendingRequestsScreen';
 
 
 const Stack = createNativeStackNavigator();
@@ -230,6 +236,7 @@ const getActiveRouteName = (state) => {
 export default function RootNavigator() {
   const [isLoading, setIsLoading] = useState(true);
   const [initialRoute, setInitialRoute] = useState(null); // Initially null to avoid flickering
+  const dispatch = useDispatch();
 
 
   useEffect(() => {
@@ -295,15 +302,64 @@ export default function RootNavigator() {
       }
     };
 
-    loadInitialRoute();
+    (async () => {
+      await loadInitialRoute();
+      try {
+        const cachedUser = await getStoredUser();
+        if (cachedUser) dispatch(setUser(cachedUser));
+      } catch (e) {
+        console.warn('Failed to hydrate cached user in RootNavigator', e);
+      }
+    })();
+
+    // Sync pending updates when connection returns and update redux with real trip ids
+    let unsubscribeNet = () => {}
+    if (NetInfo && typeof NetInfo.addEventListener === 'function') {
+      unsubscribeNet = NetInfo.addEventListener(async state => {
+        if (state.isConnected) {
+          try {
+            const results = await syncPendingUpdates();
+            if (Array.isArray(results) && results.length > 0) {
+              // For each successful sync, update redux store so UI can reflect real trip ids
+              results.forEach(r => {
+                if (r && r.tripData) {
+                  try {
+                    dispatch({ type: 'SET_TRIP_DATA', payload: r.tripData });
+                  } catch (e) {
+                    console.warn('Failed to dispatch trip update after sync', e);
+                  }
+                }
+              })
+            }
+          } catch (e) {
+            console.warn('syncPendingUpdates error', e);
+          }
+        }
+      });
+    }
 
     // 3️⃣ Subscribe to real-time auth changes
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (!user) {
         console.log("User is not logged in");
         // Clear stored data when user signs out
-        await AsyncStorage.removeItem("userId");
-        await AsyncStorage.removeItem("emailVerified");
+        try {
+          await AsyncStorage.removeItem("userId");
+          await AsyncStorage.removeItem("emailVerified");
+          await AsyncStorage.removeItem("user");
+          await AsyncStorage.removeItem("user_id");
+          await AsyncStorage.removeItem("customer_code");
+        } catch (e) {
+          console.warn('Error clearing cached user keys', e);
+        }
+
+        // Reset Redux auth state as well
+        try {
+          dispatch(setUser(null));
+        } catch (e) {
+          console.warn('Failed to dispatch setUser(null)', e);
+        }
+
         setInitialRoute("LoginScreen");
         return;
       }
@@ -406,6 +462,7 @@ export default function RootNavigator() {
         <Stack.Screen name="Cart" component={CartScreen} options={{ headerShown: false }} />
         <Stack.Screen name="OrderTracking" component={OrderTrackingScreen} options={{ headerShown: false }} />
         <Stack.Screen name="OrderHistory" component={OrderHistory} options={{ headerShown: false }} />
+        <Stack.Screen name="PendingRequests" component={PendingRequestsScreen} options={{ headerShown: false }} />
 
 
 

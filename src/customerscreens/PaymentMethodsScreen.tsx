@@ -11,6 +11,8 @@ import { api } from "../../api"
 import { setCard } from "../redux/actions/cardsAction"
 import WebView from "react-native-webview"
 import CustomDrawer from "../components/CustomDrawer"
+import NetInfo from '@react-native-community/netinfo'
+import { getCachedCustomerCards, saveCachedCustomerCards } from '../utils/storage'
 
 const { width } = Dimensions.get("window")
 
@@ -23,6 +25,7 @@ const PaymentMethodsScreen = ({ navigation }) => {
   const [showPaystackWebView, setShowPaystackWebView] = useState(false)
   const [authorizationUrl, setAuthorizationUrl] = useState("")
   const [updatingCardId, setUpdatingCardId] = useState(null)
+  const [isConnected, setIsConnected] = useState(true)
 
   const mastercardIcon = require("../../assets/mastercard.png")
   const visaIcon = require("../../assets/visa-credit-card.png")
@@ -34,14 +37,46 @@ const PaymentMethodsScreen = ({ navigation }) => {
     fetchCustomerCards()
   }, [user_id])
 
+  useEffect(() => {
+    let unsubscribe = () => {}
+    if (NetInfo && typeof NetInfo.addEventListener === 'function') {
+      unsubscribe = NetInfo.addEventListener(state => {
+        const connected = !!state.isConnected
+        setIsConnected(connected)
+        if (connected && user_id) fetchCustomerCards()
+      })
+    }
+    return () => { try { unsubscribe(); } catch (e) {} }
+  }, [user_id])
+
   const fetchCustomerCards = async () => {
     setIsLoading(true)
     try {
+      let connected = true
+      if (NetInfo && typeof NetInfo.fetch === 'function') {
+        try {
+          const state = await NetInfo.fetch()
+          connected = !!state.isConnected
+        } catch (e) {
+          connected = true
+        }
+      }
+
+      if (!connected) {
+        const cached = await getCachedCustomerCards(String(user_id))
+        const cards = cached?.list || []
+        setCardsDetails(cards)
+        const selectedCard = cards.find((card) => card.is_selected === 1 || card.is_default === 1)
+        setSelectedCardId(selectedCard ? selectedCard.id : cards[0]?.id || null)
+        return
+      }
+
       const res = await axios.get(api + `customer-cards/${user_id}`)
       console.log("Customer Cards--------------:", res.data)
 
       const cards = res.data
       setCardsDetails(cards)
+      saveCachedCustomerCards(String(user_id), cards).catch(() => {})
 
       // Find the currently selected card
       const selectedCard = cards.find((card) => card.is_selected === 1 || card.is_default === 1)
@@ -49,8 +84,11 @@ const PaymentMethodsScreen = ({ navigation }) => {
 
     } catch (err) {
       console.error("Error fetching customer Cards:", err)
-      setCardsDetails([])
-      setSelectedCardId(null)
+      const cached = await getCachedCustomerCards(String(user_id))
+      const cards = cached?.list || []
+      setCardsDetails(cards)
+      const selectedCard = cards.find((card) => card.is_selected === 1 || card.is_default === 1)
+      setSelectedCardId(selectedCard ? selectedCard.id : cards[0]?.id || null)
     } finally {
       setIsLoading(false)
     }
@@ -59,6 +97,10 @@ const PaymentMethodsScreen = ({ navigation }) => {
   // Initialize Paystack transaction and get authorization URL
   const initializePaystackTransaction = async () => {
     try {
+      if (!isConnected) {
+        Alert.alert("Offline", "You are offline. Please connect to the internet to add a new card.")
+        return
+      }
       setIsLoading(true);
 
       const response = await axios.post(`${api}initialize-card-registration`, {
@@ -84,6 +126,10 @@ const PaymentMethodsScreen = ({ navigation }) => {
 
   const handleSuccessfulTransaction = async (reference) => {
     try {
+      if (!isConnected) {
+        Alert.alert("Offline", "You are offline. Please connect to the internet to verify the transaction.")
+        return
+      }
       const verificationResponse = await axios.get(`${api}verify-card-registration/${reference}`);
 
       if (verificationResponse.data.status === "success") {
@@ -104,6 +150,10 @@ const PaymentMethodsScreen = ({ navigation }) => {
   };
 
   const handleDeleteCard = (cardId) => {
+    if (!isConnected) {
+      Alert.alert("Offline", "You are offline. Please connect to the internet to delete a card.")
+      return
+    }
     Alert.alert(
       "Delete Card",
       "Are you sure you want to delete this card?",
@@ -143,6 +193,20 @@ const PaymentMethodsScreen = ({ navigation }) => {
 
   const handleCardSelect = async (cardId) => {
     if (selectedCardId === cardId) return
+
+    if (!isConnected) {
+      setSelectedCardId(cardId)
+      const updatedCards = cardsDetails.map((card) => ({
+        ...card,
+        is_selected: card.id === cardId ? 1 : 0,
+        is_default: card.id === cardId ? 1 : 0,
+      }))
+      setCardsDetails(updatedCards)
+      dispatch(setCard({ cardsDetails: updatedCards }))
+      saveCachedCustomerCards(String(user_id), updatedCards).catch(() => {})
+      Alert.alert("Offline", "Primary card updated locally. It will sync when you are online.")
+      return
+    }
 
     setUpdatingCardId(cardId)
     try {
@@ -353,9 +417,9 @@ const PaymentMethodsScreen = ({ navigation }) => {
         {/* Add New Card Button */}
         <View style={styles.footer}>
           <TouchableOpacity
-            style={[styles.addCardButton, isLoading && styles.addCardButtonDisabled]}
+            style={[styles.addCardButton, (isLoading || !isConnected) && styles.addCardButtonDisabled]}
             onPress={initializePaystackTransaction}
-            disabled={isLoading}
+            disabled={isLoading || !isConnected}
           >
             {isLoading ? (
               <ActivityIndicator size="small" color="#FFFFFF" />
@@ -363,7 +427,11 @@ const PaymentMethodsScreen = ({ navigation }) => {
               <Icon name="add" type="material" size={22} color="#FFFFFF" />
             )}
             <Text style={styles.addCardButtonText}>
-              {isLoading ? "Processing..." : "Add New Card with Paystack"}
+              {isLoading
+                ? "Processing..."
+                : isConnected
+                  ? "Add New Card with Paystack"
+                  : "Offline - connect to add card"}
             </Text>
           </TouchableOpacity>
         </View>

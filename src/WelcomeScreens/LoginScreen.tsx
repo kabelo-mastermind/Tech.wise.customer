@@ -26,6 +26,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import axios from 'axios';
 import { api } from '../../api';
 import { showToast } from '../constants/showToast';
+import { getStoredUser, saveStoredUser } from '../utils/storage';
 
 const LoginScreen = ({ navigation }) => {
   const [showPassword, setShowPassword] = useState(false);
@@ -51,11 +52,19 @@ const LoginScreen = ({ navigation }) => {
         const currentUser = auth.currentUser;
 
         if (currentUser.emailVerified) {
-          dispatch(setUser({
-            name: user.displayName,
-            email: user.email,
-            id: user.uid,
-          }));
+          // Load cached user data instead of creating minimal object
+          const cachedUser = await getStoredUser();
+          if (cachedUser) {
+            // Use cached full user data
+            dispatch(setUser(cachedUser));
+          } else {
+            // Fallback to minimal data if no cache
+            dispatch(setUser({
+              name: user.displayName,
+              email: user.email,
+              id: user.uid,
+            }));
+          }
           navigation.replace('DrawerNavigator');
         } else {
           // User is logged in but email not verified - send to verification screen
@@ -117,13 +126,16 @@ const LoginScreen = ({ navigation }) => {
       setUserId(user.uid);
       setUserAuth(user);
 
-      // Set basic user data in Redux first
-      dispatch(setUser({
+      // Set basic user data in Redux first and persist to AsyncStorage
+      const basicUser = {
         name: userData.name || user.displayName,
         email: user.email,
         id: user.uid,
         role: userData.role,
-      }));
+      };
+
+      dispatch(setUser(basicUser));
+      await saveStoredUser(basicUser);
 
       // Then fetch additional customer data from your API
       await fetchCustomerUserID(user, userData);
@@ -165,7 +177,7 @@ const LoginScreen = ({ navigation }) => {
         console.log("Successfully fetched - user_id:", user_id, "customer_code:", customer_code);
 
         // ✅ Wait for Redux update and AsyncStorage to finish
-        dispatch(setUser({
+        const fullUser = {
           name: userData.name || user.displayName || response.data.name,
           email: user.email,
           id: user.uid,
@@ -174,16 +186,19 @@ const LoginScreen = ({ navigation }) => {
           customer_code,
           phoneNumber,
           profile_picture: response.data?.profile_picture,
-        }));
+        };
 
-        await AsyncStorage.setItem("user_id", user_id.toString());
-        if (customer_code) await AsyncStorage.setItem("customer_code", customer_code);
+        dispatch(setUser(fullUser));
+        await saveStoredUser(fullUser);
+
+        await AsyncStorage.setItem('user_id', user_id.toString());
+        if (customer_code) await AsyncStorage.setItem('customer_code', customer_code);
         
         if (user_id && customer_code && userData.role) {
           // ✅ Delay navigation slightly to ensure Redux + Storage are ready
           setTimeout(() => {
             navigation.replace('DrawerNavigator');
-          }, 1500); // 1.5s delay
+          }, 500); // Reduced delay since storage is now reliable
         }
       } else {
         console.warn("No user ID found in API response:", response.data);
@@ -214,13 +229,20 @@ const LoginScreen = ({ navigation }) => {
         showToast("error", "Unexpected Error", "Please try again.");
       }
 
-      // Fallback: still store minimal data before navigation
-      dispatch(setUser({
+      // Fallback: still store minimal data before navigation and persist it
+      const fallbackUser = {
         name: userData.name || user.displayName,
         email: user.email,
         id: user.uid,
         role: userData.role,
-      }));
+      };
+
+      dispatch(setUser(fallbackUser));
+      try {
+        await AsyncStorage.setItem('user', JSON.stringify(fallbackUser));
+      } catch (e) {
+        console.warn('Failed to save fallback user to AsyncStorage', e);
+      }
 
       // ✅ Add delay here too
       setTimeout(() => {

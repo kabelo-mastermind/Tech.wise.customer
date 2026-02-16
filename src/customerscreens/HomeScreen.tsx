@@ -1,5 +1,5 @@
 "use client"
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useMemo } from "react"
 import {
   View,
   Text,
@@ -12,12 +12,16 @@ import {
   Platform,
   SafeAreaView,
   StyleSheet,
+  Alert,
 } from "react-native"
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons"
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
 import CustomDrawer from "../components/CustomDrawer"
 import { useSelector } from "react-redux"
+import useCachedUser from "../hooks/useCachedUser"
+import { getRecentService, setRecentService } from '../utils/storage'
+import { getRecentDestinations } from '../utils/storage'
 
 const { width, height } = Dimensions.get("window")
 
@@ -33,34 +37,50 @@ const SERVICE_CARD_SPACING = 15
 // Images
 const HEADER_RIGHT_IMAGE = require("../../assets/nthomeAir_images/homeScreen.png")
 
-// Sample data (your existing data)
-const services = [
-  {
-    id: "1",
-    title: "NthomeRides",
-    description: "Book safe, reliable rides anywhere in South Africa.",
-    icon: <Ionicons name="car-sport" size={28} color="#0A94B8" />,
-  },
-  {
-    id: "2",
-    title: "NthomeFood",
-    description: "Order from your favourite SA restaurants in minutes.",
-    icon: <Ionicons name="fast-food" size={28} color="#0A94B8" />,
-  },
-  {
-    id: "3",
-    title: "NthomeAir",
-    description: "Find the best deals on domestic and international flights.",
-    icon: <Ionicons name="airplane" size={28} color="#0A94B8" />,
-  },
-];
+// Sample data (your existing data) - moved inside component to avoid hook issues
+
 
 const popularDestinations = [
-  { id: "1", city: "Cape Town", image: require("../../assets/nthomeAir_images/download.jpg") },
-  { id: "2", city: "Durban", image: require("../../assets/nthomeAir_images/download (1).jpg") },
-  { id: "3", city: "Johannesburg", image: require("../../assets/nthomeAir_images/download (2).jpg") },
-  { id: "4", city: "Kruger National Park", image: require("../../assets/nthomeAir_images/greater.jpg") },
-  { id: "5", city: "Victoria Falls", image: require("../../assets/nthomeAir_images/Victoria.jpg") },
+  { 
+    id: "1", 
+    city: "Sandton City", 
+    image: { uri: "https://images.unsplash.com/photo-1555636222-cae831e670b3?w=400" },
+    latitude: -26.1076,
+    longitude: 28.0567,
+    address: "Sandton City, Johannesburg, South Africa"
+  },
+  { 
+    id: "2", 
+    city: "Pretoria CBD", 
+    image: { uri: "https://images.unsplash.com/photo-1587974928442-77dc3e0dba72?w=400" },
+    latitude: -25.7479,
+    longitude: 28.2293,
+    address: "Pretoria CBD, Pretoria, South Africa"
+  },
+  { 
+    id: "3", 
+    city: "OR Tambo Airport", 
+    image: { uri: "https://images.unsplash.com/photo-1436491865332-7a61a109cc05?w=400" },
+    latitude: -26.1367,
+    longitude: 28.2411,
+    address: "OR Tambo International Airport, Johannesburg, South Africa"
+  },
+  { 
+    id: "4", 
+    city: "Menlyn Park", 
+    image: { uri: "https://images.unsplash.com/photo-1519567241046-7f570eee3ce6?w=400" },
+    latitude: -25.7859,
+    longitude: 28.2773,
+    address: "Menlyn Park Shopping Centre, Pretoria, South Africa"
+  },
+  { 
+    id: "5", 
+    city: "Fourways Mall", 
+    image: { uri: "https://images.unsplash.com/photo-1519677100203-a0e668c92439?w=400" },
+    latitude: -26.0125,
+    longitude: 28.0084,
+    address: "Fourways Mall, Johannesburg, South Africa"
+  },
 ]
 
 const recentSearches = [
@@ -74,36 +94,97 @@ const exclusiveOffers = [
   {
     id: "1",
     title: "Gauteng Rider Special",
-    description: "Get 20% off your next ride in Pretoria or Johannesburg.",
+    description: "Get 20% off your next NthomeRides trip in Pretoria or Johannesburg.",
     discount: "20% OFF",
     image: require("../../assets/nthomeAir_images/ride.jpg"),
-    category: "E-Hailing",
+    category: "NthomeRides",
   },
   {
     id: "2",
-    title: "Local Eats Deal",
-    description: "Free delivery from your favourite local restaurants in Soweto.",
-    discount: "FREE DELIVERY",
-    image: require("../../assets/nthomeAir_images/food.jpg"),
-    category: "Food Delivery",
+    title: "Weekend Ride Saver",
+    description: "Enjoy discounted fares on NthomeRides every Saturday and Sunday.",
+    discount: "15% OFF",
+    image: { uri: "https://images.unsplash.com/photo-1485463611174-f302f6a5c1c9?w=800&q=80" },
+    category: "NthomeRides",
   },
   {
     id: "3",
-    title: "Mzansi Getaway",
-    description: "Fly from Joburg to Cape Town from just R999!",
-    discount: "FROM R999",
-    image: require("../../assets/nthomeAir_images/fly.jpg"),
-    category: "Flights",
+    title: "First Ride Free",
+    description: "New to NthomeRides? Get your first ride up to R50 free!",
+    discount: "FREE RIDE",
+    image: { uri: "https://images.unsplash.com/photo-1550355291-bbee04a92027?w=800&q=80" },
+    category: "NthomeRides",
   },
 
 ]
 
+// Mock weather data fallback
+const getMockWeatherData = () => {
+  const saWeatherConditions = [
+    { condition: "Sunny", icon: "weather-sunny", tempRange: [20, 35], windRange: [5, 15] },
+    { condition: "Partly Cloudy", icon: "weather-partly-cloudy", tempRange: [18, 28], windRange: [8, 18] },
+    { condition: "Cloudy", icon: "weather-cloudy", tempRange: [16, 24], windRange: [10, 20] },
+    { condition: "Light Rain", icon: "weather-rainy", tempRange: [14, 22], windRange: [12, 25] },
+    { condition: "Thunderstorms", icon: "weather-lightning-rainy", tempRange: [15, 23], windRange: [15, 30] },
+    { condition: "Clear", icon: "weather-night", tempRange: [12, 20], windRange: [5, 12] }
+  ];
+
+  const randomCondition = saWeatherConditions[Math.floor(Math.random() * saWeatherConditions.length)];
+  const [minTemp, maxTemp] = randomCondition.tempRange;
+  const [minWind, maxWind] = randomCondition.windRange;
+
+  const temp = Math.floor(Math.random() * (maxTemp - minTemp + 1)) + minTemp;
+  const wind = Math.floor(Math.random() * (maxWind - minWind + 1)) + minWind;
+  const humidity = Math.floor(Math.random() * 30) + 50;
+
+  return {
+    temp: temp,
+    condition: randomCondition.condition,
+    icon: randomCondition.icon,
+    wind: wind,
+    humidity: humidity,
+    location: "Current Location"
+  };
+};
+
 // Improved Weather Function with Fallback
 const fetchWeatherData = async (latitude, longitude) => {
+  // Try Google Weather API first
+  try {
+    const GOOGLE_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
+    
+    console.log('Fetching weather data from Google...');
+    const response = await fetch(
+      `https://weatherapi-com.p.rapidapi.com/current.json?q=${latitude},${longitude}`,
+      {
+        method: 'GET',
+        headers: {
+          'X-RapidAPI-Key': GOOGLE_API_KEY,
+          'X-RapidAPI-Host': 'weatherapi-com.p.rapidapi.com'
+        }
+      }
+    );
+
+    if (response.ok) {
+      const data = await response.json();
+      return {
+        temp: Math.round(data.current.temp_c),
+        condition: data.current.condition.text,
+        icon: getWeatherIconFromCondition(data.current.condition.text),
+        wind: Math.round(data.current.wind_kph),
+        humidity: data.current.humidity,
+        location: data.location.name
+      };
+    }
+  } catch (error) {
+    console.log('Google Weather API failed, trying OpenWeather...', error.message);
+  }
+
+  // Fallback to OpenWeather API
   try {
     const API_KEY = process.env.EXPO_PUBLIC_OPENWEATHER_API_KEY;
 
-    console.log('Fetching real weather data...');
+    console.log('Fetching weather data from OpenWeather...');
     const response = await fetch(
       `https://api.openweathermap.org/data/2.5/weather?lat=${latitude}&lon=${longitude}&units=metric&appid=${API_KEY}`
     );
@@ -123,9 +204,21 @@ const fetchWeatherData = async (latitude, longitude) => {
       location: data.name
     };
   } catch (error) {
-    console.log('Using mock weather data due to error:', error.message);
-    // return getMockWeatherData();
+    console.log('All weather APIs failed, using mock data:', error.message);
+    return getMockWeatherData();
   }
+};
+
+const getWeatherIconFromCondition = (condition) => {
+  const lowerCondition = condition.toLowerCase();
+  if (lowerCondition.includes('thunder') || lowerCondition.includes('storm')) return 'weather-lightning';
+  if (lowerCondition.includes('drizzle')) return 'weather-pouring';
+  if (lowerCondition.includes('rain')) return 'weather-rainy';
+  if (lowerCondition.includes('snow') || lowerCondition.includes('sleet')) return 'weather-snowy';
+  if (lowerCondition.includes('mist') || lowerCondition.includes('fog')) return 'weather-fog';
+  if (lowerCondition.includes('clear') || lowerCondition.includes('sunny')) return 'weather-sunny';
+  if (lowerCondition.includes('cloud') || lowerCondition.includes('overcast')) return 'weather-cloudy';
+  return 'weather-cloudy';
 };
 
 const getWeatherIcon = (weatherCode) => {
@@ -140,6 +233,38 @@ const getWeatherIcon = (weatherCode) => {
 };
 
 const HomeScreen = ({ navigation }) => {
+  // Define services with useMemo to stabilize reference
+  const services = useMemo(() => [
+    {
+      id: "1",
+      title: "NthomeRides",
+      description: "Book safe, reliable rides anywhere in South Africa.",
+      icon: <Ionicons name="car-sport" size={28} color="#0DCAF0" />,
+      comingSoon: false,
+    },
+    {
+      id: "2",
+      title: "NthomeFood",
+      description: "Order from your favourite SA restaurants in minutes.",
+      icon: <Ionicons name="fast-food" size={28} color="#0DCAF0" />,
+      comingSoon: true,
+    },
+    {
+      id: "3",
+      title: "NthomeAir",
+      description: "Find the best deals on domestic and international flights.",
+      icon: <Ionicons name="airplane" size={28} color="#0DCAF0" />,
+      comingSoon: true,
+    },
+    {
+      id: "4",
+      title: "NthomeVan",
+      description: "Move your belongings and heavy items anywhere in SA.",
+      icon: <Ionicons name="bus" size={28} color="#0DCAF0" />,
+      comingSoon: true,
+    },
+  ], []);
+
   const [weather, setWeather] = useState(null)
   const [loadingWeather, setLoadingWeather] = useState(true)
   const [userLocation, setUserLocation] = useState(null)
@@ -147,8 +272,12 @@ const HomeScreen = ({ navigation }) => {
   const _map = useRef(null)
   const [latlng, setLatlng] = useState(null)
   const [carsAround, setCarsAround] = useState([])
+  const [recentDestinations, setRecentDestinations] = useState([])
+  const [recentService, setRecentServiceState] = useState(null)
+  const [displayServices, setDisplayServices] = useState(() => services)
 
   const user = useSelector((state) => state.auth.user)
+  useCachedUser()
   const PROFILE_IMAGE = user?.profile_picture || "https://v0.dev/placeholder.svg?height=100&width=100"
 
   // Get location and weather
@@ -214,10 +343,46 @@ const HomeScreen = ({ navigation }) => {
 
     getLocationAndWeather();
 
+    const loadRecentService = async () => {
+      try {
+        const recent = await getRecentService()
+        if (isMounted) {
+          if (recent && recent.id) {
+            const matched = services.find(s => s.id === recent.id)
+            if (matched) {
+              setRecentServiceState(matched)
+              const rest = services.filter(s => s.id !== matched.id)
+              setDisplayServices([matched, ...rest])
+            } else {
+              setDisplayServices(services)
+            }
+          } else {
+            setDisplayServices(services)
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+    loadRecentService();
+
+    const loadRecents = async () => {
+      try {
+        const r = await getRecentDestinations(8)
+        setRecentDestinations(r)
+      } catch (e) {
+        setRecentDestinations([])
+      }
+    }
+    loadRecents();
+
     return () => {
       isMounted = false;
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  
 
   // Refresh weather
   const refreshWeather = async () => {
@@ -330,18 +495,40 @@ const HomeScreen = ({ navigation }) => {
             </TouchableOpacity>
           </View>
           <FlatList
-            data={services}
+            data={displayServices}
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.servicesListContent}
             renderItem={({ item }) => (
               <TouchableOpacity
-                style={styles.serviceCard}
-                onPress={() => {
+                style={[styles.serviceCard, item.comingSoon && styles.serviceCardDisabled]}
+                onPress={async () => {
+                  try {
+                    // persist recent service id and bring it to front
+                    await setRecentService({ id: item.id })
+                    setRecentServiceState(item)
+                    const rest = services.filter(s => s.id !== item.id)
+                    setDisplayServices([item, ...rest])
+                  } catch (e) {}
                   switch (item.id) {
-                    case "1": navigation.navigate("RequestScreen"); break;
-                    case "2": navigation.navigate("NthomeFoodLanding"); break;
-                    case "3": navigation.navigate("FlightWelcomeScreen"); break;
+                    case "1": 
+                      navigation.navigate("RequestScreen"); 
+                      break;
+                    case "2": 
+                      Alert.alert("Coming Soon", "NthomeFood service will be available soon!", [
+                        { text: "OK" },
+                      ]);
+                      break;
+                    case "3": 
+                      Alert.alert("Coming Soon", "NthomeAir service will be available soon!", [
+                        { text: "OK" },
+                      ]);
+                      break;
+                    case "4": 
+                      Alert.alert("Coming Soon", "NthomeVan service will be available soon!", [
+                        { text: "OK" },
+                      ]);
+                      break;
                     default: break;
                   }
                 }}
@@ -350,6 +537,11 @@ const HomeScreen = ({ navigation }) => {
                 <View style={styles.serviceTextContainer}>
                   <Text style={styles.serviceCardTitle}>{item.title}</Text>
                   <Text style={styles.serviceCardDesc}>{item.description}</Text>
+                  {item.comingSoon && (
+                    <View style={styles.comingSoonBadgeHome}>
+                      <Text style={styles.comingSoonTextHome}>Coming Soon</Text>
+                    </View>
+                  )}
                 </View>
               </TouchableOpacity>
             )}
@@ -366,7 +558,18 @@ const HomeScreen = ({ navigation }) => {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.horizontalListContent}
             renderItem={({ item }) => (
-              <TouchableOpacity style={styles.popularCard}>
+              <TouchableOpacity 
+                style={styles.popularCard}
+                onPress={() => {
+                  navigation.navigate("RequestScreen", {
+                    presetDestination: {
+                      latitude: item.latitude,
+                      longitude: item.longitude,
+                      address: item.address
+                    }
+                  });
+                }}
+              >
                 <Image source={item.image} style={styles.popularImage} />
                 <LinearGradient colors={["transparent", "rgba(0,0,0,0.7)"]} style={styles.popularCardOverlay}>
                   <Text style={styles.popularCity}>{item.city}</Text>
@@ -380,16 +583,21 @@ const HomeScreen = ({ navigation }) => {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Recent Searches</Text>
           <FlatList
-            data={recentSearches}
+            data={recentDestinations && recentDestinations.length > 0 ? recentDestinations : recentSearches}
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.horizontalListContent}
             renderItem={({ item }) => (
-              <TouchableOpacity style={styles.recentSearchTag}>
-                <Text style={styles.recentSearchText}>{item.term}</Text>
+              <TouchableOpacity style={styles.recentSearchTag} onPress={() => {
+                // If item is from storage it may have address/name fields
+                const text = item.term || item.address || item.name
+                // navigate to RequestScreen with pre-filled destination
+                navigation.navigate('RequestScreen', { presetDestination: item })
+              }}>
+                <Text style={styles.recentSearchText}>{item.term || item.address || item.name}</Text>
               </TouchableOpacity>
             )}
-            keyExtractor={(item) => item.id}
+            keyExtractor={(item, idx) => item.id || item.savedAt?.toString() || idx.toString()}
           />
         </View>
 
@@ -401,7 +609,10 @@ const HomeScreen = ({ navigation }) => {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.horizontalListContent}
             renderItem={({ item }) => (
-              <TouchableOpacity style={styles.offerCard}>
+              <TouchableOpacity 
+                style={styles.offerCard}
+                onPress={() => navigation.navigate("RequestScreen")}
+              >
                 <Image source={item.image} style={styles.offerImage} />
                 <View style={styles.offerContent}>
                   <Text style={styles.offerDiscount}>{item.discount}</Text>
@@ -578,7 +789,7 @@ const styles = StyleSheet.create({
     textAlign: "left",
   },
   titleAccent: {
-    color: "#0A94B8",
+    color: "#0DCAF0",
     fontWeight: "bold",
   },
   slogan: {
@@ -592,12 +803,12 @@ const styles = StyleSheet.create({
   headerButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#0A94B8',
+    backgroundColor: '#0DCAF0',
     paddingVertical: 12,
     paddingHorizontal: width < 400 ? 15 : 20,
     borderRadius: 25,
     borderWidth: 1,
-    borderColor: '#0A94B8',
+    borderColor: '#0DCAF0',
     marginTop: 0,
   },
   headerButtonText: {
@@ -629,7 +840,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   seeAllText: {
-    color: '#0A94B8',
+    color: '#0DCAF0',
     fontSize: 14,
     fontWeight: '600',
   },
@@ -680,6 +891,22 @@ const styles = StyleSheet.create({
   serviceCardDesc: {
     color: "#777",
     fontSize: 13,
+  },
+  serviceCardDisabled: {
+    opacity: 0.6,
+  },
+  comingSoonBadgeHome: {
+    backgroundColor: "#0DCAF0",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    alignSelf: "flex-start",
+    marginTop: 6,
+  },
+  comingSoonTextHome: {
+    color: "#fff",
+    fontSize: 11,
+    fontWeight: "600",
   },
   horizontalListContent: {
     paddingHorizontal: 0,

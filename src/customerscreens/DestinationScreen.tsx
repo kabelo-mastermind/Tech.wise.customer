@@ -52,23 +52,22 @@ const DestinationScreen = ({ navigation, route }) => {
   const [hasNavigated, setHasNavigated] = useState(false);
   // Payment status from navigation params
   const [paymentStatus, setPaymentStatus] = useState(null)
-
+  // Add this near your other state declarations
+  const [paymentStatusMessage, setPaymentStatusMessage] = useState(null)
   // Check for payment status from navigation params
   useEffect(() => {
     if (route.params?.paymentStatus) {
       setPaymentStatus(route.params.paymentStatus)
 
-      // Show appropriate message based on payment status
+      // Store message instead of showing toast
       if (route.params.paymentStatus === "success") {
-        showToast("success", "Payment Successful", "Enjoy your trip.");
+        setPaymentStatusMessage("Payment Successful - Enjoy your trip")
       } else if (route.params.paymentStatus === "cancelled") {
-        showToast("info", "Payment Cancelled", "You cannot complete your trip.");
+        setPaymentStatusMessage("Payment Cancelled - You cannot complete your trip")
       } else if (route.params.paymentStatus === "error") {
-        showToast("error", "Payment Error", route.params.paymentError || "Unknown error.");
+        setPaymentStatusMessage(`Payment Error - ${route.params.paymentError || "Unknown error"}`)
       }
 
-
-      // Clear the params to prevent showing the alert again on screen focus
       navigation.setParams({ paymentStatus: null })
     }
   }, [route.params])
@@ -106,7 +105,20 @@ const DestinationScreen = ({ navigation, route }) => {
   const [countdownSeconds, setCountdownSeconds] = useState(0)
   const [lastDriverLocation, setLastDriverLocation] = useState(null)
   const [arrivalTime, setArrivalTime] = useState(null)
-
+  // Arrival message to show in-UI instead of toasts for Nearby/Close/Arrived
+  const [arrivalMessage, setArrivalMessage] = useState<string | null>(null)
+  const [arrivalStage, setArrivalStage] = useState<'nearby' | 'close' | 'arrived' | null>(null)
+  // Payment error message state
+  const [paymentErrorMessage, setPaymentErrorMessage] = useState(null);
+  // Destination arrival states for when trip has started
+  const [destinationCountdown, setDestinationCountdown] = useState(null)
+  const [destinationCountdownSeconds, setDestinationCountdownSeconds] = useState(0)
+  const [destinationArrivalTime, setDestinationArrivalTime] = useState(null)
+  const [destinationArrivalStage, setDestinationArrivalStage] = useState<'nearby' | 'close' | 'arrived' | null>(null)
+  const [destinationArrivalMessage, setDestinationArrivalMessage] = useState<string | null>(null)
+  const [hasAlertedDestination, setHasAlertedDestination] = useState({ nearby: false, close: false, arrived: false })
+  // Add this near your other state declarations
+  const [showCancelButton, setShowCancelButton] = useState(true)
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
     const R = 6371; // Earth radius in kilometers
     const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -240,6 +252,88 @@ const DestinationScreen = ({ navigation, route }) => {
     return () => clearInterval(timer);
   }, [eta, driverLocation, arrivalTime]);
 
+  // Destination countdown timer for when trip has started
+  useEffect(() => {
+    if (!startedTrip || !etaTrip || etaTrip === "N/A" || !userDestination) {
+      setDestinationCountdown(null);
+      setDestinationCountdownSeconds(0);
+      setDestinationArrivalTime(null);
+      return;
+    }
+
+    const totalSeconds = etaToSeconds(etaTrip);
+
+    if (totalSeconds <= 0) {
+      setDestinationCountdown("Arrived at Destination");
+      setDestinationCountdownSeconds(0);
+      setDestinationArrivalTime(null);
+      return;
+    }
+
+    // Update destination arrival time
+    const newDestinationArrivalTime = calculateArrivalTime(totalSeconds);
+    setDestinationArrivalTime(newDestinationArrivalTime);
+    setDestinationCountdownSeconds(totalSeconds);
+    setDestinationCountdown(formatCountdown(totalSeconds));
+
+    const timer = setInterval(() => {
+      if (destinationArrivalTime) {
+        const now = new Date();
+        const remainingSeconds = Math.max(0, Math.floor((destinationArrivalTime - now) / 1000));
+
+        if (remainingSeconds <= 0) {
+          clearInterval(timer);
+          setDestinationCountdown("Arrived at Destination");
+          setDestinationCountdownSeconds(0);
+          setDestinationArrivalTime(null);
+        } else {
+          setDestinationCountdownSeconds(remainingSeconds);
+          setDestinationCountdown(formatCountdown(remainingSeconds));
+        }
+      }
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [etaTrip, startedTrip, userDestination]);
+
+  // Calculate distance to destination when trip has started
+  useEffect(() => {
+    if (!startedTrip || !driverLocation || !userDestination) return;
+
+    // Calculate distance between driver and destination
+    const distanceToDestination = calculateDistance(
+      driverLocation.latitude,
+      driverLocation.longitude,
+      userDestination.latitude,
+      userDestination.longitude
+    );
+
+    // Check if driver is getting close to destination
+    if (distanceToDestination <= 50 && !hasAlertedDestination.arrived) {
+      setDestinationArrivalMessage("Arrived at destination")
+      setDestinationArrivalStage('arrived')
+      setHasAlertedDestination((prev) => ({ ...prev, arrived: true }));
+      setDestinationCountdown("Arrived");
+      setDestinationCountdownSeconds(0);
+      setDestinationArrivalTime(null);
+    } else if (distanceToDestination <= 250 && !hasAlertedDestination.close) {
+      setDestinationArrivalMessage("Almost at destination")
+      setDestinationArrivalStage('close')
+      setHasAlertedDestination((prev) => ({ ...prev, close: true }));
+    } else if (distanceToDestination <= 500 && !hasAlertedDestination.nearby) {
+      setDestinationArrivalMessage("Approaching destination")
+      setDestinationArrivalStage('nearby')
+      setHasAlertedDestination((prev) => ({ ...prev, nearby: true }));
+    }
+
+    // Reset alerts if driver moves away
+    if (distanceToDestination > 600) {
+      setHasAlertedDestination({ nearby: false, close: false, arrived: false });
+      setDestinationArrivalMessage(null)
+      setDestinationArrivalStage(null)
+    }
+  }, [driverLocation, startedTrip, userDestination]);
+
   // Smart ETA adjustment based on driver progress
   useEffect(() => {
     if (!driverLocation || !lastDriverLocation || !userOrigin) return;
@@ -285,6 +379,17 @@ const DestinationScreen = ({ navigation, route }) => {
     }
   }, [eta]);
 
+  // Reset destination countdown when trip ETA changes
+  useEffect(() => {
+    if (startedTrip && etaTrip && etaTrip !== "N/A") {
+      const newSeconds = etaToSeconds(etaTrip);
+      if (Math.abs(newSeconds - destinationCountdownSeconds) > 30) {
+        setDestinationCountdownSeconds(newSeconds);
+        setDestinationCountdown(formatCountdown(newSeconds));
+      }
+    }
+  }, [etaTrip, startedTrip]);
+
   const handleCancelTrip = () => {
     // Optional: Add confirmation alert
     Alert.alert(
@@ -315,8 +420,12 @@ const DestinationScreen = ({ navigation, route }) => {
     setCountdownSeconds(0);
     setArrivalTime(null);
     setDriverLocation(null);
+    setDestinationCountdown(null);
+    setDestinationCountdownSeconds(0);
+    setDestinationArrivalTime(null);
     setShowCancelAlert(true);
     setHasNavigated(false);
+    setShowCancelButton(true); // Add this line to show cancel button again
 
     // Clear Redux state
     dispatch({
@@ -368,6 +477,7 @@ const DestinationScreen = ({ navigation, route }) => {
         emitTripCanceltToDrivers(tripData, driver_id);
         stopListeningToTripAccepted();
         stopListeningToTripDeclined();
+        setShowCancelButton(true); // Add this line
 
         // Use the same cleanup function
         handleTripCancellation('manual');
@@ -375,7 +485,7 @@ const DestinationScreen = ({ navigation, route }) => {
       } else if (response.status === 404) {
         console.error("Trip not found:", await response.json());
         setShowCancelAlert(false);
-        showToast("error", "Trip Not Found", "The trip does not exist or has been removed.");
+        setPaymentStatusMessage("Trip Not Found - The trip does not exist or has been removed.");
       } else {
         console.log("Trip status not updated:", await response.json());
         setShowCancelAlert(false);
@@ -383,12 +493,11 @@ const DestinationScreen = ({ navigation, route }) => {
     } catch (error) {
       console.error("Error canceling the trip:", error);
       setShowCancelAlert(false);
-      showToast("error", "Trip Not Found", "The trip does not exist or has been removed.");
+      setPaymentStatusMessage("Trip Not Found - The trip does not exist or has been removed.");
     }
 
     setCancelModalVisible(false);
   };
-
   const handleCloseModal = () => {
     setCancelModalVisible(false) // Close modal
   }
@@ -399,6 +508,7 @@ const DestinationScreen = ({ navigation, route }) => {
       stopListeningToTripAccepted();
       stopListeningToTripDeclined();
       setHasNavigated(false);
+      setShowCancelButton(true); // Reset to show cancel button on unmount
     };
   }, []);
   const [customerCode, setCustomerCode] = useState(null)
@@ -412,12 +522,12 @@ const DestinationScreen = ({ navigation, route }) => {
         return response.data.customer_code
       } else {
         console.error("No customer code found in response:", response.data)
-        showToast("info", "Profile Incomplete", "Please complete your profile before making payments.");
+        setPaymentErrorMessage("Profile incomplete. Please complete your profile before making payments.");
         return null
       }
     } catch (error) {
       console.error("Error fetching customer code:", error)
-      showToast("error", "Payment Error", "There was an error processing your payment. Please try again.");
+      setPaymentErrorMessage("There was an error processing your payment. Please try again.");
       return null
     }
   }
@@ -432,10 +542,9 @@ const DestinationScreen = ({ navigation, route }) => {
 
     // Listen for when the trip is accepted 
     listenToTripAccepted((data) => {
-      // console.log("✅ Trip accepted:", data);
-      showToast("success", "Trip Accepted", "Your trip has been accepted!");
       setTripStatus("accepted")
       setTripData(data)
+      setArrivalMessage("Trip Accepted - Driver is on the way")
       dispatch({
         type: 'SET_TRIP_DATA',
         payload: { status: 'accepted' }
@@ -445,19 +554,20 @@ const DestinationScreen = ({ navigation, route }) => {
     // Listen for when the driver has arrived
     listenToDriverArrival((data) => {
       console.log("✅ Trip arrived:", data)
-      // alert(`Your driver has arrived! Trip ID: ${data.tripId}`);
       setTripStatus("arrived")
+      setArrivalMessage("Driver has arrived")
+      setArrivalStage('arrived')
       setCountdown("Arrived")
       setCountdownSeconds(0)
       setArrivalTime(null)
     })
 
-
     // listener runs when trip starts
     listenToTripStarted((data) => {
       setTripStatus("started")
       setStartedTrip(true)
-      showToast("info", "Trip Started", "Your trip has been started!")
+      setShowCancelButton(false) // Add this line to hide cancel button
+      setArrivalMessage("Trip Started - Going to destination")
       console.log("Trip started data:", data)
 
       const newDestination = destination?.latitude && destination?.longitude
@@ -483,18 +593,18 @@ const DestinationScreen = ({ navigation, route }) => {
       })
     })
 
-
-    // Listen for when the trip is ended
     // Listen for when the trip is ended
     listenToTripEnded((data) => {
-      console.log("Trip ended data:", data); // logs the whole object
+      console.log("Trip ended data:", data);
       setStartedTrip(false)
 
-      showToast("success", "Trip Ended", "Your trip has ended!");
       setTripStatus("ended");
       setCountdown(null);
       setCountdownSeconds(0);
       setArrivalTime(null);
+      setDestinationCountdown(null);
+      setDestinationCountdownSeconds(0);
+      setDestinationArrivalTime(null);
       dispatch({
         type: 'SET_TRIP_DATA',
         payload: { status: 'completed' }
@@ -504,18 +614,15 @@ const DestinationScreen = ({ navigation, route }) => {
       // Navigate to RideRatingScreen
       navigation.navigate("RideRatingScreen", {
         tripId: data.tripId,
-        driverId: data.driver_id, // if needed for the rating
+        driverId: data.driver_id,
         userId: user_id
       });
     });
 
-
-
     // Then update your socket listener:
     listenToTripDeclined((data) => {
       console.log("❌ Trip canceled via socket:", data);
-      showToast("error", "Trip canceled", "Your trip has been canceled!");
-
+      setShowCancelButton(true) // Add this line
       // Wait a moment for toast to show, then handle cancellation
       setTimeout(() => {
         handleTripCancellation('socket');
@@ -586,17 +693,16 @@ const DestinationScreen = ({ navigation, route }) => {
             setCountdown(null);
             setCountdownSeconds(0);
             setArrivalTime(null);
+            setDestinationCountdown(null);
+            setDestinationCountdownSeconds(0);
+            setDestinationArrivalTime(null);
             dispatch(clearMessages())
             stopListeningToTripAccepted();
             stopListeningToTripDeclined();
           }
         }
       } catch (error) {
-        showToast(
-          "error",
-          "Error",
-          "Failed to fetch trip statuses. Please try again later."
-        );
+        setPaymentStatusMessage("Failed to fetch trip statuses. Please try again later.");
       }
     };
 
@@ -608,16 +714,17 @@ const DestinationScreen = ({ navigation, route }) => {
   // hndle payment initiation and trip status changes
   useEffect(() => {
     if (tripStatusAccepted === "canceled") {
-
       // Just do cleanup without navigation or alert
       setDriverLocation({ latitude: null, longitude: null });
       setCountdown(null);
       setCountdownSeconds(0);
       setArrivalTime(null);
+      setDestinationCountdown(null);
+      setDestinationCountdownSeconds(0);
+      setDestinationArrivalTime(null);
       dispatch(clearMessages())
       stopListeningToTripAccepted();
       stopListeningToTripDeclined();
-
     }
 
     if (
@@ -652,19 +759,14 @@ const DestinationScreen = ({ navigation, route }) => {
 
             if (data.charged) {
               // ✅ Payment was automatically charged!
-              showToast(
-                "success",
-                "Payment Success",
-                "Your saved card was charged successfully."
-              );
-              setPaymentStatus("success"); // Update your payment status
+              setPaymentStatus("success");
+              setPaymentStatusMessage("Payment Success - Your saved card was charged successfully.")
               setTripMeta({
                 tripId: tripData?.tripId,
                 driverName: tripData?.driverName || "Your Driver",
                 tripDistance: distanceTrip,
                 tripDuration: etaTrip,
               });
-              // Optionally navigate or update UI here
             } else if (data.data?.authorization_url) {
               // ✅ New payment → need to open WebView
               console.log("Redirecting user to Paystack WebView...");
@@ -676,20 +778,11 @@ const DestinationScreen = ({ navigation, route }) => {
               });
               setAuthorizationUrl(data.data.authorization_url);
             } else {
-
-              showToast(
-                "error",
-                "Error",
-                "Failed to initialize or charge payment."
-              );
+              setPaymentStatusMessage("Failed to initialize or charge payment.");
             }
           } catch (err) {
             console.error("Payment init error:", err.message);
-            showToast(
-              "error",
-              "Error",
-              "Something went wrong while processing payment."
-            );
+            setPaymentStatusMessage("Something went wrong while processing payment.");
           }
         }
       };
@@ -713,11 +806,7 @@ const DestinationScreen = ({ navigation, route }) => {
             // console.log("🚗 Driver location updated:", data);
 
             if (!data.latitude || !data.longitude) {
-              showToast(
-                "error",
-                "Location Error",
-                "Driver location data is incomplete."
-              )
+              setPaymentStatusMessage("Driver location data is incomplete.");
               return
             }
 
@@ -727,19 +816,11 @@ const DestinationScreen = ({ navigation, route }) => {
               // timestamp: data.timestamp ?? prev.timestamp,
             }))
           } else {
-            showToast(
-              "info",
-              "Driver Location",
-              "No driver location found yet."
-            )
+            // No driver location found yet - handled by UI state
           }
         },
         (error) => {
-          showToast(
-            "error",
-            "Error",
-            "Failed to fetch driver location. Please try again."
-          )
+          setPaymentStatusMessage("Failed to fetch driver location. Please try again.");
         },
       )
 
@@ -767,16 +848,19 @@ const DestinationScreen = ({ navigation, route }) => {
     setDistance(distanceMeters);
 
     if (distanceMeters <= 50 && !hasAlerted.arrived) {
-      showToast("success", "Driver Arrived", "Your driver has arrived!");
+      setArrivalMessage("Driver has arrived")
+      setArrivalStage('arrived')
       setHasAlerted((prev) => ({ ...prev, arrived: true }));
       setCountdown("Arrived");
       setCountdownSeconds(0);
       setArrivalTime(null);
     } else if (distanceMeters <= 250 && !hasAlerted.close) {
-      showToast("info", "Driver Close", "Your driver is almost there (250 m).");
+      setArrivalMessage("Driver is almost there")
+      setArrivalStage('close')
       setHasAlerted((prev) => ({ ...prev, close: true }));
     } else if (distanceMeters <= 500 && !hasAlerted.nearby) {
-      showToast("info", "Driver Nearby", "Your driver is nearby (500 m).");
+      setArrivalMessage("Driver nearby")
+      setArrivalStage('nearby')
       setHasAlerted((prev) => ({ ...prev, nearby: true }));
     }
   }, [driverLocation]);
@@ -784,6 +868,9 @@ const DestinationScreen = ({ navigation, route }) => {
   useEffect(() => {
     if (distance > 600) {
       setHasAlerted({ nearby: false, close: false, arrived: false });
+      // Clear arrival UI message when driver moves far away
+      setArrivalMessage(null)
+      setArrivalStage(null)
     }
   }, [distance]);
 
@@ -809,12 +896,7 @@ const DestinationScreen = ({ navigation, route }) => {
           setDistance(firstLeg.distance?.text || "N/A")
         }
       } catch (error) {
-        showToast(
-          "error",
-          "Error",
-          "Failed to fetch route details. Please try again."
-        )
-
+        setPaymentStatusMessage("Failed to fetch route details. Please try again.");
       }
     }
 
@@ -843,12 +925,7 @@ const DestinationScreen = ({ navigation, route }) => {
           setDistanceTrip(firstLegDestination.distance?.text || "N/A")
         }
       } catch (error) {
-        showToast(
-          "error",
-          "Error",
-          "Failed to fetch route details. Please try again."
-        )
-
+        setPaymentStatusMessage("Failed to fetch route details. Please try again.");
       }
     }
 
@@ -889,11 +966,7 @@ const DestinationScreen = ({ navigation, route }) => {
             }
           } else if (navState.url.includes("payment-error")) {
             setAuthorizationUrl(null);
-            showToast(
-              "error",
-              "Payment Failed",
-              "Something went wrong during payment."
-            )
+            setPaymentStatusMessage("Payment Failed - Something went wrong during payment.");
           }
         }}
       />
@@ -918,29 +991,132 @@ const DestinationScreen = ({ navigation, route }) => {
 
               {/* Right button OR placeholder */}
               <View style={styles.iconWrapper}>
-                {/* {!(tripStatus === "started" || route.params?.paymentStatus === "success") && ( */}
-                <TouchableOpacity
-                  style={styles.cancelButtonContainer}
-                  onPress={handleCancelTrip}
-                >
-                  <Icon name="cancel" color="#0DCAF0" size={30} />
-                </TouchableOpacity>
-                {/* )} */}
+                {showCancelButton && !startedTrip && (
+                  <TouchableOpacity
+                    style={styles.cancelButtonContainer}
+                    onPress={handleCancelTrip}
+                  >
+                    <Icon name="cancel" color="#0DCAF0" size={30} />
+                  </TouchableOpacity>
+                )}
               </View>
             </View>
 
-            {/* Countdown Timer Display */}
-            {countdown && tripStatusAccepted === "accepted" && (
-              <View style={styles.countdownContainer}>
-                <View style={styles.countdownContent}>
-                  <Icon name="timer" type="material" size={20} color="#0DCAF0" />
-                  <Text style={styles.countdownLabel}>Driver arriving in:</Text>
-                  <Text style={styles.countdownTimer}>{countdown}</Text>
+            {/* Countdown Timer Display - SHOW DURING TRIP ACCEPTED/ARRIVED PHASE */}
+            {(tripStatusAccepted === "accepted" || tripStatusAccepted === "arrived") &&
+              (countdown || arrivalMessage || distance || paymentStatusMessage || paymentErrorMessage) && (
+                <View style={styles.arrivalCard}>
+                  <View style={styles.arrivalTop}>
+                    <View style={styles.driverInfo}>
+                      <View style={{ marginLeft: 10, maxWidth: SCREEN_WIDTH * 0.55 }}>
+                        <Text numberOfLines={1} ellipsizeMode="tail" style={styles.driverName}>
+                          {tripData?.driverName || 'Driver'}
+                        </Text>
+                        {/* Show arrival message as subtitle */}
+                        {(arrivalMessage || paymentStatusMessage || paymentErrorMessage) && (
+                          <Text numberOfLines={1} ellipsizeMode="tail" style={styles.arrivalStatusText}>
+                            {arrivalMessage || paymentStatusMessage || paymentErrorMessage}
+                          </Text>
+                        )}
+                      </View>
+                    </View>
+                    <View style={styles.timerPill}>
+                      {arrivalStage === 'arrived' ? (
+                        <Text style={styles.timerPillText}>Arrived</Text>
+                      ) : (
+                        <Text style={styles.timerPillText}>{countdown || 'Calculating...'}</Text>
+                      )}
+                    </View>
+                  </View>
+
+                  <View style={styles.arrivalBottom}>
+                    <View style={styles.bottomLeft}>
+                      {/* Arrival Stage Badge */}
+                      {arrivalStage && (
+                        <View style={[
+                          styles.arrivalBadge,
+                          arrivalStage === 'arrived' ? styles.arrivalBadgeArrived :
+                            arrivalStage === 'close' ? styles.arrivalBadgeClose :
+                              styles.arrivalBadgeNearby,
+                        ]}>
+                          <Text style={styles.arrivalBadgeText}>
+                            {arrivalStage === 'arrived' ? 'Arrived' :
+                              arrivalStage === 'close' ? 'Almost there' :
+                                'Nearby'}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+
+                    {/* Distance and ETA Info */}
+                    {distance && eta ? (
+                      <Text style={styles.distanceTextCompact}>
+                        {distance}{eta ? ` • ${eta}` : ''}
+                      </Text>
+                    ) : (
+                      <Text style={styles.etaUpdateTextCompact}>
+                        Location updates incoming
+                      </Text>
+                    )}
+                  </View>
                 </View>
-                {distance && (
-                  <Text style={styles.distanceText}>{distance} away</Text>
-                )}
-                <Text style={styles.etaUpdateText}>Updates based on driver's location</Text>
+              )}
+
+            {/* DESTINATION COUNTDOWN DISPLAY - SHOW WHEN TRIP HAS STARTED */}
+            {startedTrip && userDestination && (
+              <View style={styles.destinationCard}>
+                <View style={styles.destinationTop}>
+                  <View style={styles.driverInfo}>
+                    <View style={{ marginLeft: 10, maxWidth: SCREEN_WIDTH * 0.55 }}>
+                      <Text numberOfLines={1} ellipsizeMode="tail" style={styles.driverName}>
+                        Going to Destination
+                      </Text>
+                      {(destinationArrivalMessage || paymentStatusMessage || paymentErrorMessage) && (
+                        <Text numberOfLines={1} ellipsizeMode="tail" style={styles.arrivalStatusText}>
+                          {destinationArrivalMessage || paymentStatusMessage || paymentErrorMessage}
+                        </Text>
+                      )}
+                    </View>
+                  </View>
+                  <View style={[styles.timerPill, { backgroundColor: '#10B981' }]}>
+                    {destinationArrivalStage === 'arrived' ? (
+                      <Text style={styles.timerPillText}>Arrived</Text>
+                    ) : (
+                      <Text style={styles.timerPillText}>{destinationCountdown || 'Calculating...'}</Text>
+                    )}
+                  </View>
+                </View>
+
+                <View style={styles.arrivalBottom}>
+                  <View style={styles.bottomLeft}>
+                    {/* Destination Arrival Stage Badge */}
+                    {destinationArrivalStage && (
+                      <View style={[
+                        styles.arrivalBadge,
+                        destinationArrivalStage === 'arrived' ? styles.arrivalBadgeArrived :
+                          destinationArrivalStage === 'close' ? styles.arrivalBadgeClose :
+                            styles.arrivalBadgeNearby,
+                      ]}>
+                        <Text style={styles.arrivalBadgeText}>
+                          {destinationArrivalStage === 'arrived' ? 'At Destination' :
+                            destinationArrivalStage === 'close' ? 'Almost there' :
+                              'Approaching'}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+
+                  {/* Destination Distance and ETA Info */}
+                  {distanceTrip && etaTrip ? (
+                    <Text style={styles.distanceTextCompact}>
+                      {distanceTrip}{etaTrip ? ` • ${etaTrip}` : ''}
+                    </Text>
+                  ) : (
+                    <Text style={styles.etaUpdateTextCompact}>
+                      En route to destination
+                    </Text>
+                  )}
+                </View>
               </View>
             )}
           </View>
@@ -957,8 +1133,8 @@ const DestinationScreen = ({ navigation, route }) => {
               tripStarted={startedTrip}
               userOrigin={userOrigin}
               userDestination={userDestination}
-              showDirections={shouldShowDirections} // FIXED: Added this prop
-              key={`map-${userDestination?.latitude}-${userDestination?.longitude}`} // FIXED: Force re-render when destination changes
+              showDirections={shouldShowDirections}
+              key={`map-${userDestination?.latitude}-${userDestination?.longitude}`}
             />
           )}
         </View>
@@ -986,6 +1162,11 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#FFFFFF",
+  },
+  arrivalStatusText: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 2,
   },
   headerContainer: {
     position: "absolute",
@@ -1070,9 +1251,6 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
     elevation: 5,
   },
-  // cancelButtonContainer: {
-  //   top: 100, // Position below the call button
-  // },
   profilePicture: {
     width: 30,
     height: 30,
@@ -1145,6 +1323,131 @@ const styles = StyleSheet.create({
     color: "#64748B",
     textAlign: "center",
     fontStyle: "italic",
+  },
+  arrivalBadge: {
+    alignSelf: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    marginVertical: 6,
+  },
+  arrivalBadgeNearby: {
+    backgroundColor: '#E6F7FF',
+  },
+  arrivalBadgeClose: {
+    backgroundColor: '#FFF7E6',
+  },
+  arrivalBadgeArrived: {
+    backgroundColor: '#E6FFEF',
+  },
+  arrivalBadgeText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#0F172A',
+    textAlign: 'center',
+  },
+  /* New modern styles */
+  arrivalCard: {
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 12,
+    marginBottom: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(13,202,240,0.06)'
+  },
+  destinationCard: {
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 12,
+    marginBottom: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(16,185,129,0.06)'
+  },
+  arrivalTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  destinationTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  driverInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  driverAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F1FAFD',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(13,202,240,0.10)'
+  },
+  driverAvatarText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0D9FB8'
+  },
+  driverName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0F172A'
+  },
+  arrivalMessageText: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  timerPill: {
+    backgroundColor: '#0DCAF0',
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 14,
+    minWidth: 56,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  timerPillText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  arrivalBottom: {
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  bottomLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  distanceTextCompact: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginLeft: 8,
+  },
+  etaUpdateTextCompact: {
+    fontSize: 10,
+    color: '#9CA3AF'
   },
 })
 
