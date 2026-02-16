@@ -1,15 +1,24 @@
 import io from "socket.io-client";
+import { getIdToken } from "firebase/auth";
+import { auth } from "../../FirebaseConfig";
 import config from "./config"; // Import backend URL from config.js
 
 let socket;
 
-export const connectSocket = (userId, userType) => {
-  if (socket && socket.connected) return
+export const connectSocket = async (userId, userType) => {
+  if (socket && socket.connected) return;
+
+  const user = auth.currentUser;
+  const token = user ? await getIdToken(user, true) : null;
+
   socket = io(config.SOCKET_URL, {
     transports: ["websocket"], // Use WebSocket for real-time communication
     forceNew: true, // Ensures a new connection is established
     reconnectionAttempts: 5, // Number of reconnection attempts
     timeout: 10000, // Connection timeout (in ms)
+    auth: {
+      token,
+    },
   });
 
   socket.on("connect", () => {
@@ -24,9 +33,15 @@ export const connectSocket = (userId, userType) => {
 
 
   socket.on("connect_error", (err) => {
-    console.warn("⚠️ Socket connection error: retrying")
+    console.warn("⚠️ Socket connection error: retrying", err && err.message);
     setTimeout(() => socket.connect(), 5000);
-  })
+  });
+
+  socket.on("reconnect_attempt", async () => {
+    const refreshedUser = auth.currentUser;
+    const refreshedToken = refreshedUser ? await getIdToken(refreshedUser, true) : null;
+    socket.auth = { token: refreshedToken };
+  });
   socket.on("disconnect", () => console.log("❌ Disconnected from Socket.IO server"));
 }
 export const disconnectSocket = () => {
