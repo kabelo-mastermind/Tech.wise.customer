@@ -1003,127 +1003,146 @@ const DestinationScreen = ({ navigation, route }) => {
             </View>
 
             {/* Countdown Timer Display - SHOW DURING TRIP ACCEPTED/ARRIVED PHASE */}
-            {(tripStatusAccepted === "accepted" || tripStatusAccepted === "arrived") &&
-              (countdown || arrivalMessage || distance || paymentStatusMessage || paymentErrorMessage) && (
-                <View style={styles.arrivalCard}>
-                  <View style={styles.arrivalTop}>
+            {/* ARRIVAL & DESTINATION CARDS */}
+            <>
+              {(tripStatusAccepted === "accepted" || tripStatusAccepted === "arrived") &&
+                (countdown || arrivalMessage || distance || paymentStatusMessage || paymentErrorMessage) && (
+                  <View style={styles.arrivalCard}>
+                    <View style={styles.arrivalTop}>
+                      <View style={styles.driverInfo}>
+                        <View style={{ marginLeft: 10, maxWidth: SCREEN_WIDTH * 0.55 }}>
+                          <Text numberOfLines={1} ellipsizeMode="tail" style={styles.driverName}>
+                            {tripData?.driverName || 'Driver'}
+                          </Text>
+                          {/* Show arrival message as subtitle */}
+                          {(arrivalMessage || paymentStatusMessage || paymentErrorMessage) && (
+                            <Text numberOfLines={1} ellipsizeMode="tail" style={styles.arrivalStatusText}>
+                              {arrivalMessage || paymentStatusMessage || paymentErrorMessage}
+                            </Text>
+                          )}
+                        </View>
+                      </View>
+                      <View style={styles.timerPill}>
+                        {arrivalStage === 'arrived' ? (
+                          <Text style={styles.timerPillText}>Arrived</Text>
+                        ) : (
+                          <Text style={styles.timerPillText}>{countdown || 'Calculating...'}</Text>
+                        )}
+                      </View>
+                    </View>
+
+                    <View style={styles.arrivalBottom}>
+                      <View style={styles.bottomLeft}>
+                        {/* Arrival Stage Badge */}
+                        {arrivalStage && (
+                          <View style={[
+                            styles.arrivalBadge,
+                            arrivalStage === 'arrived' ? styles.arrivalBadgeArrived :
+                              arrivalStage === 'close' ? styles.arrivalBadgeClose :
+                                styles.arrivalBadgeNearby,
+                          ]}>
+                            <Text style={styles.arrivalBadgeText}>
+                              {arrivalStage === 'arrived' ? 'Arrived' :
+                                arrivalStage === 'close' ? 'Almost there' :
+                                  'Nearby'}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+
+                      {/* Distance and ETA Info */}
+                      {distance && eta ? (
+                        <Text style={styles.distanceTextCompact}>
+                          {distance}{eta ? ` • ${eta}` : ''}
+                        </Text>
+                      ) : (
+                        <Text style={styles.etaUpdateTextCompact}>
+                          Location updates incoming
+                        </Text>
+                      )}
+                    </View>
+                  </View>
+                )}
+
+              {/* DESTINATION COUNTDOWN DISPLAY - SHOW WHEN TRIP HAS STARTED */}
+              {startedTrip && userDestination && (
+                <View style={styles.destinationCard}>
+                  <View style={styles.destinationTop}>
                     <View style={styles.driverInfo}>
                       <View style={{ marginLeft: 10, maxWidth: SCREEN_WIDTH * 0.55 }}>
                         <Text numberOfLines={1} ellipsizeMode="tail" style={styles.driverName}>
-                          {tripData?.driverName || 'Driver'}
+                          Going to Destination
                         </Text>
-                        {/* Show arrival message as subtitle */}
-                        {(arrivalMessage || paymentStatusMessage || paymentErrorMessage) && (
+                        {(destinationArrivalMessage || paymentStatusMessage || paymentErrorMessage) && (
                           <Text numberOfLines={1} ellipsizeMode="tail" style={styles.arrivalStatusText}>
-                            {arrivalMessage || paymentStatusMessage || paymentErrorMessage}
+                            {destinationArrivalMessage || paymentStatusMessage || paymentErrorMessage}
                           </Text>
                         )}
                       </View>
                     </View>
-                    <View style={styles.timerPill}>
-                      {arrivalStage === 'arrived' ? (
+                    <View style={[styles.timerPill, { backgroundColor: '#10B981' }]}> 
+                      {destinationArrivalStage === 'arrived' ? (
                         <Text style={styles.timerPillText}>Arrived</Text>
                       ) : (
-                        <Text style={styles.timerPillText}>{countdown || 'Calculating...'}</Text>
+                        <Text style={styles.timerPillText}>{destinationCountdown || 'Calculating...'}</Text>
                       )}
                     </View>
                   </View>
 
                   <View style={styles.arrivalBottom}>
                     <View style={styles.bottomLeft}>
-                      {/* Arrival Stage Badge */}
-                      {arrivalStage && (
+                      {/* Destination Arrival Stage Badge */}
+                      {destinationArrivalStage && (
                         <View style={[
                           styles.arrivalBadge,
-                          arrivalStage === 'arrived' ? styles.arrivalBadgeArrived :
-                            arrivalStage === 'close' ? styles.arrivalBadgeClose :
+                          destinationArrivalStage === 'arrived' ? styles.arrivalBadgeArrived :
+                            destinationArrivalStage === 'close' ? styles.arrivalBadgeClose :
                               styles.arrivalBadgeNearby,
                         ]}>
                           <Text style={styles.arrivalBadgeText}>
-                            {arrivalStage === 'arrived' ? 'Arrived' :
-                              arrivalStage === 'close' ? 'Almost there' :
-                                'Nearby'}
+                            {destinationArrivalStage === 'arrived' ? 'At Destination' :
+                              destinationArrivalStage === 'close' ? 'Almost there' :
+                                'Approaching'}
                           </Text>
                         </View>
                       )}
                     </View>
 
-                    {/* Distance and ETA Info */}
-                    {distance && eta ? (
+                    {/* Destination Distance and ETA Info */}
+                    {distanceTrip && etaTrip ? (
                       <Text style={styles.distanceTextCompact}>
-                        {distance}{eta ? ` • ${eta}` : ''}
+                        {distanceTrip}{etaTrip ? ` • ${etaTrip}` : ''}
                       </Text>
                     ) : (
                       <Text style={styles.etaUpdateTextCompact}>
-                        Location updates incoming
+                        En route to destination
                       </Text>
                     )}
                   </View>
                 </View>
               )}
-
-            {/* DESTINATION COUNTDOWN DISPLAY - SHOW WHEN TRIP HAS STARTED */}
-            {startedTrip && userDestination && (
-              <View style={styles.destinationCard}>
-                <View style={styles.destinationTop}>
-                  <View style={styles.driverInfo}>
-                    <View style={{ marginLeft: 10, maxWidth: SCREEN_WIDTH * 0.55 }}>
-                      <Text numberOfLines={1} ellipsizeMode="tail" style={styles.driverName}>
-                        Going to Destination
-                      </Text>
-                      {(destinationArrivalMessage || paymentStatusMessage || paymentErrorMessage) && (
-                        <Text numberOfLines={1} ellipsizeMode="tail" style={styles.arrivalStatusText}>
-                          {destinationArrivalMessage || paymentStatusMessage || paymentErrorMessage}
-                        </Text>
-                      )}
-                    </View>
-                  </View>
-                  <View style={[styles.timerPill, { backgroundColor: '#10B981' }]}>
-                    {destinationArrivalStage === 'arrived' ? (
-                      <Text style={styles.timerPillText}>Arrived</Text>
-                    ) : (
-                      <Text style={styles.timerPillText}>{destinationCountdown || 'Calculating...'}</Text>
-                    )}
-                  </View>
-                </View>
-
-                <View style={styles.arrivalBottom}>
-                  <View style={styles.bottomLeft}>
-                    {/* Destination Arrival Stage Badge */}
-                    {destinationArrivalStage && (
-                      <View style={[
-                        styles.arrivalBadge,
-                        destinationArrivalStage === 'arrived' ? styles.arrivalBadgeArrived :
-                          destinationArrivalStage === 'close' ? styles.arrivalBadgeClose :
-                            styles.arrivalBadgeNearby,
-                      ]}>
-                        <Text style={styles.arrivalBadgeText}>
-                          {destinationArrivalStage === 'arrived' ? 'At Destination' :
-                            destinationArrivalStage === 'close' ? 'Almost there' :
-                              'Approaching'}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-
-                  {/* Destination Distance and ETA Info */}
-                  {distanceTrip && etaTrip ? (
-                    <Text style={styles.distanceTextCompact}>
-                      {distanceTrip}{etaTrip ? ` • ${etaTrip}` : ''}
-                    </Text>
-                  ) : (
-                    <Text style={styles.etaUpdateTextCompact}>
-                      En route to destination
-                    </Text>
-                  )}
-                </View>
-              </View>
-            )}
+            </>
           </View>
-          {/* Cancel Trip Icon positioned below the call button */}
-          <TouchableOpacity style={styles.rectangleButton} onPress={handleNavigation}>
-            <Text style={styles.buttonText}>View Driver</Text>
-          </TouchableOpacity>
+          {/* Action Buttons: View Driver & SOS */}
+          <View style={{ alignItems: 'center', marginTop: 8 }}>
+            <TouchableOpacity style={styles.rectangleButton} onPress={handleNavigation}>
+              <Text style={styles.buttonText}>View Driver</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Floating SOS Button - bottom center, always visible after trip accepted or on-going */}
+          {(tripStatusAccepted === 'accepted' || tripStatusAccepted === 'on-going') && (
+            <View style={{ position: 'absolute', left: 0, right: 0, bottom: 40, alignItems: 'center', zIndex: 100 }} pointerEvents="box-none">
+              <TouchableOpacity
+                style={{ backgroundColor: '#FF3B30', borderRadius: 32, width: 64, height: 64, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4, elevation: 8, zIndex: 101 }}
+                onPress={() => Alert.alert('SOS', 'Emergency assistance requested!')}
+                activeOpacity={0.85}
+              >
+                <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 18 }}>SOS</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
 
           {/* Trip Cancellation Modal */}
           <TripCancelationModal isVisible={cancelModalVisible} onClose={handleCloseModal} onCancel={handleCancel} />

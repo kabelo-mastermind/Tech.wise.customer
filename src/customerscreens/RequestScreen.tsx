@@ -182,8 +182,18 @@ export default function RequestScreen({ navigation, route }) {
       }
       return `Location (${coordinate.latitude.toFixed(4)}, ${coordinate.longitude.toFixed(4)})`;
     } catch (error) {
-      console.error("Reverse geocoding error:", error);
-      return `Location (${coordinate.latitude.toFixed(4)}, ${coordinate.longitude.toFixed(4)})`;
+      // Enhanced error logging
+      console.error("Reverse geocoding error:", {
+        error,
+        coordinate,
+        time: new Date().toISOString(),
+      });
+      // Optionally, show a user-friendly message (could use a toast/snackbar)
+      if (typeof setShowDistanceAlert === 'function') {
+        setShowDistanceAlert(true);
+      }
+      // Optionally, report to remote logging service here
+      return `Unable to fetch address. Location (${coordinate.latitude.toFixed(4)}, ${coordinate.longitude.toFixed(4)})`;
     }
   }
 
