@@ -160,11 +160,18 @@ const CartScreen = ({ navigation, route }) => {
 
         } catch (error) {
             console.error('Error getting location:', error);
-            Alert.alert(
-                "Location Error",
-                "Unable to get your current location. Please make sure location services are enabled and try again.",
-                [{ text: "OK" }]
-            );
+            const msg = error && error.message ? String(error.message) : ''
+            const isTransient = /Google Play services|connection to Google Play services|service disconnection|has been rejected|Service not Available|Location request has been rejected|Call to function/i.test(msg) || (error && (error.code === 20 || error.code === '20'))
+            if (isTransient) {
+                // Suppress noisy Google Play / service-disconnection errors; allow manual entry
+                console.warn('Transient location error suppressed in CartScreen:', msg)
+            } else {
+                Alert.alert(
+                    "Location Error",
+                    "Unable to get your current location. Please make sure location services are enabled and try again.",
+                    [{ text: "OK" }]
+                );
+            }
         } finally {
             setIsLoadingLocation(false);
         }

@@ -93,29 +93,28 @@ const recentSearches = [
 const exclusiveOffers = [
   {
     id: "1",
-    title: "Gauteng Rider Special",
-    description: "Get 20% off your next NthomeRides trip in Pretoria or Johannesburg.",
-    discount: "20% OFF",
+    title: "Security",
+    description: "All drivers are vetted and trips are monitored in real-time for your safety.",
+    discount: "Safe Rides",
     image: require("../../assets/nthomeAir_images/ride.jpg"),
-    category: "NthomeRides",
+    category: "Feature",
   },
   {
     id: "2",
-    title: "Weekend Ride Saver",
-    description: "Enjoy discounted fares on NthomeRides every Saturday and Sunday.",
-    discount: "15% OFF",
+    title: "Affordability",
+    description: "Transparent pricing and frequent promotions to keep fares low for riders.",
+    discount: "Low Fares",
     image: { uri: "https://images.unsplash.com/photo-1485463611174-f302f6a5c1c9?w=800&q=80" },
-    category: "NthomeRides",
+    category: "Feature",
   },
   {
     id: "3",
-    title: "First Ride Free",
-    description: "New to NthomeRides? Get your first ride up to R50 free!",
-    discount: "FREE RIDE",
-    image: { uri: "https://images.unsplash.com/photo-1550355291-bbee04a92027?w=800&q=80" },
-    category: "NthomeRides",
+    title: "Reliability",
+    description: "Fast pickups, accurate ETAs and reliable drivers when you need them most.",
+    discount: "On-time",
+    image: { uri: "https://images.unsplash.com/photo-1520975915474-6c0b5b0b7c9a?w=800&q=80" },
+    category: "Feature",
   },
-
 ]
 
 // Mock weather data fallback
@@ -325,7 +324,13 @@ const HomeScreen = ({ navigation }) => {
         setCarsAround(generatedCars);
 
       } catch (error) {
-        console.log('Error:', error);
+        const msg = error && error.message ? String(error.message) : ''
+        const isTransient = /Google Play services|connection to Google Play services|service disconnection|has been rejected|Service not Available|Location request has been rejected|Call to function/i.test(msg) || (error && (error.code === 20 || error.code === '20'))
+        if (isTransient) {
+          console.warn('Transient location error in HomeScreen suppressed:', msg || error)
+        } else {
+          console.log('Error:', error);
+        }
         if (!isMounted) return;
 
         // Fallback to default data

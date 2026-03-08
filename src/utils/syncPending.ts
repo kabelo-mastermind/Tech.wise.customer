@@ -68,24 +68,31 @@ export const syncPendingUpdates = async () => {
 
         } else if (item.type === 'reverse_geocode') {
           // Payload expected to have { coordinate: { latitude, longitude } }
-          try {
-            const payload = item.payload || {}
-            const coord = payload.coordinate
-            if (coord && coord.latitude && coord.longitude) {
+          const payload = item.payload || {}
+          const coord = payload.coordinate
+          if (coord && coord.latitude && coord.longitude) {
+            try {
               const arr = await Location.reverseGeocodeAsync({ latitude: coord.latitude, longitude: coord.longitude })
               const address = (Array.isArray(arr) && arr[0]) ? arr[0] : null
               // store result for later inspection / UI hydration
               try {
                 await AsyncStorage.setItem(REVERSE_GEOCODE_RESULT_PREFIX + String(item.createdAt), JSON.stringify({ createdAt: item.createdAt, coordinate: coord, address, savedAt: Date.now() }))
               } catch (e) {}
+              // success: remove pending
+              try { await removePendingUpdate(item.createdAt) } catch (e) {}
+              results.push({ createdAt: item.createdAt })
+            } catch (e) {
+              // Transient reverse geocode failure (Google Play / service disconnects etc.)
+              console.warn('syncPendingUpdates: reverseGeocode failed, will retry later for', item.createdAt, e?.message || e)
+              // increment attempts so exponential backoff applies
+              try { await updatePendingItem(item.createdAt, { attempts: (item.attempts || 0) + 1 }) } catch (ee) {}
+              // do not remove pending; continue to next item
+              continue
             }
-          } catch (e) {
-            // ignore reverse geocode failures, will retry later
-            throw e
+          } else {
+            // malformed payload; remove it
+            try { await removePendingUpdate(item.createdAt) } catch (e) {}
           }
-          // remove pending once processed
-          try { await removePendingUpdate(item.createdAt) } catch (e) {}
-          results.push({ createdAt: item.createdAt })
         } else {
           // unknown type: skip and increment attempts to avoid tight loop
           console.warn('syncPendingUpdates: unknown pending type', item.type);

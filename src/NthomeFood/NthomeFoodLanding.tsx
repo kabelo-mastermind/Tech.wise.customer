@@ -128,9 +128,15 @@ const NthomeFoodLanding = ({ navigation }) => {
                 setWeather(weatherData);
 
             } catch (error) {
-                console.log('Error:', error);
-                if (!isMounted) return;
-            } finally {
+                    const msg = error && error.message ? String(error.message) : ''
+                    const isTransient = /Google Play services|connection to Google Play services|service disconnection|has been rejected|Service not Available|Location request has been rejected|Call to function/i.test(msg) || (error && (error.code === 20 || error.code === '20'))
+                    if (isTransient) {
+                        console.warn('Transient location error in NthomeFoodLanding suppressed:', msg || error)
+                    } else {
+                        console.log('Error:', error);
+                    }
+                    if (!isMounted) return;
+                } finally {
                 if (isMounted) {
                     setLoadingWeather(false);
                 }

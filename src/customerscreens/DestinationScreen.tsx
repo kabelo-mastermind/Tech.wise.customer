@@ -17,6 +17,7 @@ import { onSnapshot, Timestamp } from "firebase/firestore"
 import {
   connectSocket,
   emitTripCanceltToDrivers,
+  emitSOS,
   listenToChatMessages,
   listenToDriverArrival,
   listenToTripAccepted,
@@ -29,6 +30,7 @@ import {
 import TripCancelationModal from "../components/TripCancelationModal"
 import { api } from "../../api"
 import { addMessage, clearMessages } from "../redux/actions/messageAction"
+import { clearTripCaches } from "../utils/storage"
 import WebView from "react-native-webview"
 import CancelAlertModal from "../components/CancelAlertModal"
 import { showToast } from "../constants/showToast"
@@ -119,6 +121,7 @@ const DestinationScreen = ({ navigation, route }) => {
   const [hasAlertedDestination, setHasAlertedDestination] = useState({ nearby: false, close: false, arrived: false })
   // Add this near your other state declarations
   const [showCancelButton, setShowCancelButton] = useState(true)
+  const [sosSending, setSosSending] = useState(false);
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
     const R = 6371; // Earth radius in kilometers
     const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -403,6 +406,7 @@ const DestinationScreen = ({ navigation, route }) => {
         {
           text: "Yes",
           onPress: () => {
+            // Open cancellation modal — actual emit will occur when user confirms inside the modal
             setCancelModalVisible(true);
           }
         }
@@ -610,6 +614,13 @@ const DestinationScreen = ({ navigation, route }) => {
         payload: { status: 'completed' }
       });
       dispatch(clearMessages())
+
+      // Clear trip-related AsyncStorage caches for this user
+      try {
+        clearTripCaches(user_id)
+      } catch (e) {
+        console.warn('Error clearing trip caches on trip end', e)
+      }
 
       // Navigate to RideRatingScreen
       navigation.navigate("RideRatingScreen", {
@@ -1134,9 +1145,51 @@ const DestinationScreen = ({ navigation, route }) => {
           {(tripStatusAccepted === 'accepted' || tripStatusAccepted === 'on-going') && (
             <View style={{ position: 'absolute', left: 0, right: 0, bottom: 40, alignItems: 'center', zIndex: 100 }} pointerEvents="box-none">
               <TouchableOpacity
-                style={{ backgroundColor: '#FF3B30', borderRadius: 32, width: 64, height: 64, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4, elevation: 8, zIndex: 101 }}
-                onPress={() => Alert.alert('SOS', 'Emergency assistance requested!')}
-                activeOpacity={0.85}
+                        style={{ backgroundColor: '#FF3B30', borderRadius: 32, width: 64, height: 64, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4, elevation: 8, zIndex: 101, opacity: sosSending ? 0.6 : 1 }}
+                        onPress={async () => {
+                          if (sosSending) return;
+                          setSosSending(true);
+                          try {
+                            const location = (driverLocation && driverLocation.latitude && driverLocation.longitude) ? { latitude: driverLocation.latitude, longitude: driverLocation.longitude } : userOrigin;
+                            const payload = {
+                              user_id: user_id || null,
+                              user_type: 'rider',
+                              trip_id: tripData?.tripId || null,
+                              latitude: location?.latitude || null,
+                              longitude: location?.longitude || null,
+                              accuracy: location?.accuracy || (location?.coords && location.coords.accuracy) || null,
+                              trigger_source: 'in_app_button',
+                              address: null,
+                              phone: null,
+                              description: 'SOS triggered from app',
+                              severity: 'high',
+                              metadata: { user_name: user_name || null, userEmail: userEmail || null, driver_id: driver_id || null }
+                            };
+
+                            // emit SOS to socket in real-time
+                            try { emitSOS(payload); } catch (e) { console.warn('emitSOS failed', e); }
+
+                            const response = await fetch(`${api}emergency`, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify(payload),
+                            });
+
+                            if (response.ok) {
+                              Alert.alert('SOS Sent', 'Emergency alert sent. Help is on the way.');
+                            } else {
+                              const text = await response.text();
+                              console.error('SOS failed:', text);
+                              Alert.alert('SOS Failed', 'Failed to send emergency alert.');
+                            }
+                          } catch (err) {
+                            console.error('Error sending SOS:', err);
+                            Alert.alert('SOS Error', 'Could not send emergency. Check your connection.');
+                          } finally {
+                            setSosSending(false);
+                          }
+                        }}
+                        activeOpacity={0.85}
               >
                 <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 18 }}>SOS</Text>
               </TouchableOpacity>

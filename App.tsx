@@ -17,6 +17,7 @@ import { toastConfig } from "./src/components/CustomToast"; // ✅ if you create
 
 LogBox.ignoreLogs([
   "Text strings must be rendered within a <Text> component",
+  "Text strings must be rendered within a <Text> component.",
 ]);
 
 export default function App() {

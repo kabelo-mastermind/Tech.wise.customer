@@ -48,6 +48,19 @@ export default function RequestScreen({ navigation, route }) {
   const [customerCode, setCustomerCode] = useState(user?.customer_code || null)
   const [isLoading, setIsLoading] = useState(true)
   const [showDistanceAlert, setShowDistanceAlert] = useState(false)
+  const [showLocationError, setShowLocationError] = useState(false)
+  const [userErrorMessage, setUserErrorMessage] = useState(null)
+
+  const handleAppError = (error: any, userMessage?: string) => {
+    if (typeof __DEV__ !== 'undefined' && __DEV__) {
+      console.error(error)
+    }
+    try {
+      setUserErrorMessage(userMessage || 'Something went wrong. Please try again.')
+    } catch (e) {
+      // ignore state set errors
+    }
+  }
   const [distanceInKm, setDistanceInKm] = useState(0)
   const [currentAddress, setCurrentAddress] = useState('');
   const [isDragging, setIsDragging] = useState(false); // Track if marker is being dragged
@@ -59,6 +72,8 @@ export default function RequestScreen({ navigation, route }) {
   const [hasPendingTrips, setHasPendingTrips] = useState(false)
   const [recentDestinations, setRecentDestinations] = useState([])
   const [showRecents, setShowRecents] = useState(true)
+  const [originText, setOriginText] = useState("")
+  const [destinationText, setDestinationText] = useState("")
   // Animated pan for draggable floating pin
   const pinPan = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
   const movedRef = useRef(false);
@@ -182,18 +197,13 @@ export default function RequestScreen({ navigation, route }) {
       }
       return `Location (${coordinate.latitude.toFixed(4)}, ${coordinate.longitude.toFixed(4)})`;
     } catch (error) {
-      // Enhanced error logging
-      console.error("Reverse geocoding error:", {
-        error,
-        coordinate,
-        time: new Date().toISOString(),
-      });
-      // Optionally, show a user-friendly message (could use a toast/snackbar)
-      if (typeof setShowDistanceAlert === 'function') {
-        setShowDistanceAlert(true);
+      // Location services can be flaky indoors; return a coordinate fallback
+      // and enqueue a pending reverse-geocode when possible. Do not show
+      // a user-facing error here so the user can manually pin locations.
+      if (typeof __DEV__ !== 'undefined' && __DEV__) {
+        console.warn('reverseGeocode failed:', error)
       }
-      // Optionally, report to remote logging service here
-      return `Unable to fetch address. Location (${coordinate.latitude.toFixed(4)}, ${coordinate.longitude.toFixed(4)})`;
+      return `Location (${coordinate.latitude.toFixed(4)}, ${coordinate.longitude.toFixed(4)})`
     }
   }
 
@@ -216,6 +226,7 @@ export default function RequestScreen({ navigation, route }) {
     // Update the destination input field with "Updating..." while dragging
     if (destinationRef.current) {
       destinationRef.current.setAddressText("Updating location...");
+      setDestinationText("Updating location...")
     }
   };
 
@@ -243,6 +254,7 @@ export default function RequestScreen({ navigation, route }) {
       // Update the destination input field with the actual address
       if (destinationRef.current) {
         destinationRef.current.setAddressText(address);
+        setDestinationText(address)
       }
 
       // Check distance limit after dropping
@@ -251,7 +263,7 @@ export default function RequestScreen({ navigation, route }) {
       }
 
     } catch (error) {
-      console.error("Error during drag end:", error);
+      handleAppError(error, "Couldn't determine the address for the dropped location. Using coordinates instead.")
 
       // Fallback: at least update coordinates even if geocoding fails
       const fallbackDestination = {
@@ -268,6 +280,7 @@ export default function RequestScreen({ navigation, route }) {
 
       if (destinationRef.current) {
         destinationRef.current.setAddressText(fallbackDestination.address);
+        setDestinationText(fallbackDestination.address)
       }
     } finally {
       setIsDragging(false);
@@ -309,7 +322,7 @@ export default function RequestScreen({ navigation, route }) {
         setCustomerCode(null)
       }
     } catch (error) {
-      console.log("Error fetching customer code:", error)
+      handleAppError(error, 'Unable to verify profile. Please check your connection.')
     } finally {
       setIsCheckingProfile(false)
       setIsLoading(false)
@@ -366,9 +379,21 @@ export default function RequestScreen({ navigation, route }) {
     // setLocationFetched(true)
 
     try {
+      // Ensure device location services are enabled (avoid "unsatisfied device settings" errors)
+      if (typeof Location.hasServicesEnabledAsync === 'function') {
+        const servicesEnabled = await Location.hasServicesEnabledAsync()
+        if (!servicesEnabled) {
+          console.warn('Location services are disabled on device/emulator.')
+          // Optionally surface a non-blocking UI indicator instead of an error
+          setShowLocationError(true)
+          return
+        }
+      }
+
       const { status } = await Location.requestForegroundPermissionsAsync()
-      // console.log("Permission Status:", status)
       if (status !== "granted") {
+        // permission denied - do not attempt to fetch
+        console.warn('Location permission not granted')
         return
       }
 
@@ -385,6 +410,7 @@ export default function RequestScreen({ navigation, route }) {
 
         if (originRef.current) {
           originRef.current.setAddressText(address)
+          setOriginText(address)
         }
 
         dispatchOrigin({
@@ -393,7 +419,15 @@ export default function RequestScreen({ navigation, route }) {
         })
       }
     } catch (error) {
-      console.error("Error fetching location:", error)
+      // Handle specific device-setting related error more quietly
+      const msg = error && error.message ? String(error.message) : ''
+      const isTransientLocationError = /unsatisfied device settings|Location request failed|Google Play services|connection to Google Play services|service disconnection|has been rejected|Service not Available|Location request has been rejected|Call to function/i.test(msg) || (error && (error.code === 20 || error.code === '20'))
+      if (isTransientLocationError) {
+        console.warn('Location request transient error suppressed:', msg)
+        // Do not show a blocking alert; allow user to manually pin location
+        return
+      }
+      handleAppError(error, 'Unable to fetch your current location. Please try again or check device settings.')
     }
   }
 
@@ -451,6 +485,7 @@ export default function RequestScreen({ navigation, route }) {
         setTimeout(() => {
           if (destinationRef.current && destinationRef.current.setAddressText) {
             destinationRef.current.setAddressText(destination.address);
+            setDestinationText(destination.address)
           }
         }, 50);
       } catch (e) {
@@ -499,7 +534,10 @@ export default function RequestScreen({ navigation, route }) {
     if (preset) {
       const payload = { latitude: preset.latitude, longitude: preset.longitude, address: preset.address || preset.name }
       dispatchDestination({ type: 'ADD_DESTINATION', payload })
-      if (destinationRef.current && destinationRef.current.setAddressText) destinationRef.current.setAddressText(payload.address)
+      if (destinationRef.current && destinationRef.current.setAddressText) {
+        destinationRef.current.setAddressText(payload.address)
+        setDestinationText(payload.address)
+      }
       try { addRecentDestination(payload) } catch (e) {}
       // clear param so it doesn't re-fire
       try { navigation.setParams({ presetDestination: null }) } catch(e){}
@@ -510,6 +548,7 @@ export default function RequestScreen({ navigation, route }) {
     if (originRef.current) {
       originRef.current.clear()
       originRef.current.setAddressText("")
+      setOriginText("")
     }
     dispatchOrigin({ type: "RESET_ORIGIN" })
   }
@@ -518,6 +557,7 @@ export default function RequestScreen({ navigation, route }) {
     if (destinationRef.current) {
       destinationRef.current.clear()
       destinationRef.current.setAddressText("")
+      setDestinationText("")
     }
     dispatchDestination({ type: "RESET_DESTINATION" })
     setDestination(false)
@@ -586,7 +626,7 @@ export default function RequestScreen({ navigation, route }) {
               <GooglePlacesAutocomplete
                 ref={originRef}
                 placeholder="From..."
-                listViewDisplayed="auto"
+                listViewDisplayed={originText && originText.length > 0 ? "auto" : false}
                 debounce={400}
                 minLength={2}
                 enablePoweredByContainer={false}
@@ -605,6 +645,8 @@ export default function RequestScreen({ navigation, route }) {
                       },
                       1000,
                     )
+                    // keep input text in sync so suggestion list closes appropriately
+                    setOriginText(details.formatted_address || details.name || "")
                   }
                 }}
                 query={{
@@ -615,6 +657,8 @@ export default function RequestScreen({ navigation, route }) {
                 textInputProps={{
                   onFocus: () => setShowRecents(false),
                   onBlur: () => setShowRecents(true),
+                  onChangeText: (text) => setOriginText(text),
+                  value: originText,
                 }}
                 onFocus={() => setShowRecents(false)}
                 onBlur={() => setShowRecents(true)}
@@ -632,7 +676,7 @@ export default function RequestScreen({ navigation, route }) {
               <GooglePlacesAutocomplete
                 ref={destinationRef}
                 placeholder="Where to"
-                listViewDisplayed="auto"
+                listViewDisplayed={destinationText && destinationText.length > 0 ? "auto" : false}
                 debounce={400}
                 minLength={2}
                 enablePoweredByContainer={false}
@@ -668,11 +712,13 @@ export default function RequestScreen({ navigation, route }) {
                       type: "ADD_DESTINATION",
                       payload: newDestination,
                     })
+                    // keep input text in sync so suggestion list closes appropriately
+                    setDestinationText(newDestination.address || newDestination.name || "")
                     try { await addRecentDestination(newDestination) } catch(e){}
                   }
                 }}
-                onFail={error => console.log('Destination autocomplete error:', error)}
-                onNotFound={() => console.log('Destination place not found')}
+                onFail={error => handleAppError(error, 'Place search failed. Please try again.')}
+                onNotFound={() => setUserErrorMessage('Place not found. Try a different query.')}
                 query={{
                   key: GOOGLE_MAPS_APIKEY,
                   language: "en",
@@ -681,6 +727,8 @@ export default function RequestScreen({ navigation, route }) {
                 textInputProps={{
                   onFocus: () => setShowRecents(false),
                   onBlur: () => setShowRecents(true),
+                  onChangeText: (text) => setDestinationText(text),
+                  value: destinationText,
                 }}
                 onFocus={() => setShowRecents(false)}
                 onBlur={() => setShowRecents(true)}
@@ -789,6 +837,38 @@ export default function RequestScreen({ navigation, route }) {
           </Modal>
         )}
 
+              {/* Location / Device Settings Error Modal */}
+              {showLocationError && (
+                <Modal
+                  visible={true}
+                  transparent={true}
+                  animationType="fade"
+                  onRequestClose={() => setShowLocationError(false)}
+                >
+                  <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                      <View style={styles.modalHeader}>
+                        <Icon name="map-marker-off" type="material-community" size={60} color="#F59E0B" />
+                        <Text style={styles.modalTitle}>Location Unavailable</Text>
+                      </View>
+
+                      <Text style={styles.modalText}>
+                        We couldn't access location services. Please enable location services on your device and try again.
+                      </Text>
+
+                      <View style={styles.modalButtons}>
+                        <TouchableOpacity
+                          style={[styles.profileButton2, { backgroundColor: "#F59E0B", flex: 1 }]}
+                          onPress={() => setShowLocationError(false)}
+                        >
+                          <Text style={styles.profileButtonText}>OK</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </View>
+                </Modal>
+              )}
+
           {/* Quick action bar for pin (appears when pinCoord is set) */}
           {pinCoord && (
             <View style={styles.pinActionBar} pointerEvents="box-none">
@@ -854,6 +934,36 @@ export default function RequestScreen({ navigation, route }) {
                   <TouchableOpacity
                     style={[styles.profileButton2, { backgroundColor: "#FF6B6B", flex: 1 }]}
                     onPress={() => setShowDistanceAlert(false)}
+                  >
+                    <Text style={styles.profileButtonText}>OK</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </Modal>
+        )}
+
+        {/* Generic user-friendly error modal (shows short friendly messages, no dev stacks) */}
+        {userErrorMessage && (
+          <Modal
+            visible={true}
+            transparent={true}
+            animationType="fade"
+            onRequestClose={() => setUserErrorMessage(null)}
+          >
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalContent}>
+                <View style={styles.modalHeader}>
+                  <Icon name="error-outline" type="material" size={60} color="#FF6B6B" />
+                  <Text style={styles.modalTitle}>Something went wrong</Text>
+                </View>
+
+                <Text style={styles.modalText}>{userErrorMessage}</Text>
+
+                <View style={styles.modalButtons}>
+                  <TouchableOpacity
+                    style={[styles.profileButton2, { backgroundColor: "#FF6B6B", flex: 1 }]}
+                    onPress={() => setUserErrorMessage(null)}
                   >
                     <Text style={styles.profileButtonText}>OK</Text>
                   </TouchableOpacity>

@@ -1,7 +1,7 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
-import { View, Text, TouchableOpacity, Image, StyleSheet, FlatList, Alert, Dimensions, StatusBar, ActivityIndicator } from "react-native"
+import { useCallback, useEffect, useState, useRef } from "react"
+import { View, Text, TouchableOpacity, Image, StyleSheet, FlatList, Alert, Dimensions, StatusBar, ActivityIndicator, Animated, Easing, Modal, LayoutAnimation, Platform, UIManager } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { Icon } from "react-native-elements"
 import { LinearGradient } from "expo-linear-gradient"
@@ -26,10 +26,87 @@ const PaymentMethodsScreen = ({ navigation }) => {
   const [authorizationUrl, setAuthorizationUrl] = useState("")
   const [updatingCardId, setUpdatingCardId] = useState(null)
   const [isConnected, setIsConnected] = useState(true)
+  const [webviewLoading, setWebviewLoading] = useState(false)
+
+  // Snackbar / optimistic action refs & state
+  const [snackbarVisible, setSnackbarVisible] = useState(false)
+  const [snackbarMessage, setSnackbarMessage] = useState("")
+  const [snackbarActionLabel, setSnackbarActionLabel] = useState("")
+  const snackbarActionRef = useRef(null)
+  const snackbarTimerRef = useRef<number | null>(null)
+  const snackbarAnim = useRef(new Animated.Value(0)).current
+
+  const pendingDeleteRef = useRef(null)
+  const pendingPrimaryRef = useRef(null)
+  const prevCardsRef = useRef([])
+
+  const showSnackbar = (message, actionLabel = null, action = null, duration = 5000) => {
+    // clear existing timer
+    if (snackbarTimerRef.current) {
+      clearTimeout(snackbarTimerRef.current as any)
+      snackbarTimerRef.current = null
+    }
+    setSnackbarMessage(message)
+    setSnackbarActionLabel(actionLabel || "")
+    snackbarActionRef.current = action
+    setSnackbarVisible(true)
+    Animated.timing(snackbarAnim, { toValue: 1, duration: 250, easing: Easing.out(Easing.ease), useNativeDriver: true }).start()
+    snackbarTimerRef.current = setTimeout(() => {
+      hideSnackbar()
+      // If there's a pending delete/primary and it wasn't undone, finalize now
+      if (pendingDeleteRef.current && pendingDeleteRef.current.cardId) {
+        performDelete(pendingDeleteRef.current.cardId)
+        pendingDeleteRef.current = null
+      }
+      if (pendingPrimaryRef.current && pendingPrimaryRef.current.cardId) {
+        performSetPrimary(pendingPrimaryRef.current.cardId)
+        pendingPrimaryRef.current = null
+      }
+    }, duration) as any
+  }
+
+  // Enable LayoutAnimation on Android
+  useEffect(() => {
+    if (Platform.OS === 'android' && UIManager && UIManager.setLayoutAnimationEnabledExperimental) {
+      UIManager.setLayoutAnimationEnabledExperimental(true)
+    }
+  }, [])
+
+  const hideSnackbar = () => {
+    if (snackbarTimerRef.current) { clearTimeout(snackbarTimerRef.current as any); snackbarTimerRef.current = null }
+    Animated.timing(snackbarAnim, { toValue: 0, duration: 200, easing: Easing.in(Easing.ease), useNativeDriver: true }).start(() => {
+      setSnackbarVisible(false)
+      setSnackbarMessage("")
+      setSnackbarActionLabel("")
+      snackbarActionRef.current = null
+    })
+  }
+
+  const onSnackbarAction = () => {
+    if (snackbarActionRef.current) snackbarActionRef.current()
+    hideSnackbar()
+  }
 
   const mastercardIcon = require("../../assets/mastercard.png")
   const visaIcon = require("../../assets/visa-credit-card.png")
   const dispatch = useDispatch()
+  const [sortMode, setSortMode] = useState('primary') // 'primary' or 'recent'
+
+  const applySort = (cards) => {
+    if (!Array.isArray(cards)) return cards || []
+    if (sortMode === 'primary') {
+      // Put primary/selected cards first, preserve order otherwise
+      const primary = cards.filter(c => c.is_default === 1 || c.is_selected === 1)
+      const others = cards.filter(c => !(c.is_default === 1 || c.is_selected === 1))
+      return [...primary, ...others]
+    }
+    // recent: sort by created_at (fallback to id) descending
+    return [...cards].sort((a, b) => {
+      const ta = a.created_at ? new Date(a.created_at).getTime() : (a.id || 0)
+      const tb = b.created_at ? new Date(b.created_at).getTime() : (b.id || 0)
+      return tb - ta
+    })
+  }
 
   // Fetch user cards from backend
   useEffect(() => {
@@ -64,31 +141,33 @@ const PaymentMethodsScreen = ({ navigation }) => {
 
       if (!connected) {
         const cached = await getCachedCustomerCards(String(user_id))
-        const cards = cached?.list || []
+          const cards = applySort(cached?.list || [])
         setCardsDetails(cards)
         const selectedCard = cards.find((card) => card.is_selected === 1 || card.is_default === 1)
         setSelectedCardId(selectedCard ? selectedCard.id : cards[0]?.id || null)
-        return
+        return cards
       }
 
       const res = await axios.get(api + `customer-cards/${user_id}`)
       console.log("Customer Cards--------------:", res.data)
 
       const cards = res.data
-      setCardsDetails(cards)
+        setCardsDetails(applySort(cards))
       saveCachedCustomerCards(String(user_id), cards).catch(() => {})
 
       // Find the currently selected card
       const selectedCard = cards.find((card) => card.is_selected === 1 || card.is_default === 1)
       setSelectedCardId(selectedCard ? selectedCard.id : cards[0]?.id || null)
+      return cards
 
     } catch (err) {
       console.error("Error fetching customer Cards:", err)
       const cached = await getCachedCustomerCards(String(user_id))
-      const cards = cached?.list || []
+        const cards = applySort(cached?.list || [])
       setCardsDetails(cards)
       const selectedCard = cards.find((card) => card.is_selected === 1 || card.is_default === 1)
       setSelectedCardId(selectedCard ? selectedCard.id : cards[0]?.id || null)
+      return cards
     } finally {
       setIsLoading(false)
     }
@@ -112,10 +191,12 @@ const PaymentMethodsScreen = ({ navigation }) => {
 
       if (authorization_url) {
         setAuthorizationUrl(authorization_url);
+        // capture current list so we can detect the newly added card after return
+        prevCardsRef.current = cardsDetails || []
         setShowPaystackWebView(true);
       } else {
         Alert.alert("Error", "Failed to initialize card registration.");
-      }
+      } 
     } catch (error) {
       console.error(error);
       Alert.alert("Error", "Failed to initialize card registration.");
@@ -133,13 +214,19 @@ const PaymentMethodsScreen = ({ navigation }) => {
       const verificationResponse = await axios.get(`${api}verify-card-registration/${reference}`);
 
       if (verificationResponse.data.status === "success") {
-        await fetchCustomerCards(); // refresh cards list
-
-        navigation.navigate("AddPaymentMethodScreen", {
-          success: true,
-          message: "Card added successfully!",
-          reference,
-        });
+        // Refresh cards and try to detect the newly added card
+        const cards = await fetchCustomerCards()
+        const prev = prevCardsRef.current || []
+        const newCard = (cards || []).find(c => !prev.some(p => String(p.id) === String(c.id)) || (c.reference && c.reference === reference))
+        if (newCard) {
+          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut)
+          setSelectedCardId(newCard.id)
+          dispatch(setCard({ cardsDetails: cards }))
+          showSnackbar('Card added and selected', null, null, 2500)
+        } else {
+          showSnackbar('Card added', null, null, 2500)
+        }
+        prevCardsRef.current = []
       } else {
         Alert.alert("Failed", "Transaction verification failed. Please try again.");
       }
@@ -154,6 +241,8 @@ const PaymentMethodsScreen = ({ navigation }) => {
       Alert.alert("Offline", "You are offline. Please connect to the internet to delete a card.")
       return
     }
+
+    // Confirm then perform optimistic delete with undo window
     Alert.alert(
       "Delete Card",
       "Are you sure you want to delete this card?",
@@ -161,34 +250,59 @@ const PaymentMethodsScreen = ({ navigation }) => {
         { text: "Cancel", style: "cancel" },
         {
           text: "Delete",
-          onPress: async () => {
-            setIsLoading(true)
-            try {
-              await axios.delete(`${api}customer-card/${cardId}`)
-              const updatedCards = cardsDetails.filter((card) => card.id !== cardId)
-              setCardsDetails(updatedCards)
+          onPress: () => {
+            const card = cardsDetails.find(c => c.id === cardId)
+            if (!card) return
 
-              // If we're deleting the selected card, select another one
-              if (selectedCardId === cardId) {
-                const newSelectedCard = updatedCards[0]?.id || null
-                setSelectedCardId(newSelectedCard)
-                
-                // If there are other cards, set the first one as primary
-                if (newSelectedCard) {
-                  await handleCardSelect(newSelectedCard)
-                }
-              }
-            } catch (err) {
-              console.error("Failed to delete card:", err)
-              Alert.alert("Error", "Could not delete the card. Please try again.")
-            } finally {
-              setIsLoading(false)
+            // Optimistically remove from UI
+            const updatedCards = cardsDetails.filter((card) => card.id !== cardId)
+            setCardsDetails(updatedCards)
+
+            // If deleted card was selected, select another locally
+            const previousSelected = selectedCardId
+            if (selectedCardId === cardId) {
+              const newSelected = updatedCards[0]?.id || null
+              setSelectedCardId(newSelected)
+              // do not call handleCardSelect now; we will finalize later
             }
+
+            // store pending delete and show undo snackbar
+            pendingDeleteRef.current = { cardId, card, previousSelected }
+            showSnackbar('Card deleted', 'Undo', () => {
+              // Undo: restore card locally and cancel pending
+              if (pendingDeleteRef.current && pendingDeleteRef.current.card) {
+                setCardsDetails(prev => [pendingDeleteRef.current.card, ...prev])
+                setSelectedCardId(pendingDeleteRef.current.previousSelected)
+                pendingDeleteRef.current = null
+              }
+            }, 5000)
           },
         },
       ],
       { cancelable: false },
     )
+  }
+
+  const performDelete = async (cardId) => {
+    try {
+      setIsLoading(true)
+      await axios.delete(`${api}customer-card/${cardId}`)
+      // success: ensure cache updated
+      saveCachedCustomerCards(String(user_id), cardsDetails).catch(() => {})
+      showSnackbar('Card deleted successfully', null, null, 2500)
+    } catch (err) {
+      console.error('Failed to finalize delete:', err)
+      // restore card on error
+      const pending = pendingDeleteRef.current
+      if (pending && pending.card) {
+        setCardsDetails(prev => [pending.card, ...prev])
+        setSelectedCardId(pending.previousSelected)
+      }
+      showSnackbar('Delete failed. Retry', 'Retry', () => performDelete(cardId), 5000)
+    } finally {
+      setIsLoading(false)
+      pendingDeleteRef.current = null
+    }
   }
 
   const handleCardSelect = async (cardId) => {
@@ -208,33 +322,60 @@ const PaymentMethodsScreen = ({ navigation }) => {
       return
     }
 
+    // Optimistic set-primary with undo window
+    const previousSelected = selectedCardId
+    // update UI immediately
+    setSelectedCardId(cardId)
+    const updatedCards = cardsDetails.map((card) => ({
+      ...card,
+      is_selected: card.id === cardId ? 1 : 0,
+      is_default: card.id === cardId ? 1 : 0,
+    }))
+    setCardsDetails(updatedCards)
+    dispatch(setCard({ cardsDetails: updatedCards }))
+
+    // store pending primary change and show undo
+    pendingPrimaryRef.current = { cardId, previousSelected }
+    showSnackbar('Primary card set', 'Undo', () => {
+      // Undo: restore previous selection locally
+      if (pendingPrimaryRef.current) {
+        setSelectedCardId(pendingPrimaryRef.current.previousSelected)
+        const restored = cardsDetails.map((card) => ({
+          ...card,
+          is_selected: card.id === pendingPrimaryRef.current.previousSelected ? 1 : 0,
+          is_default: card.id === pendingPrimaryRef.current.previousSelected ? 1 : 0,
+        }))
+        setCardsDetails(restored)
+        dispatch(setCard({ cardsDetails: restored }))
+        pendingPrimaryRef.current = null
+      }
+    }, 5000)
+  }
+
+  const performSetPrimary = async (cardId) => {
     setUpdatingCardId(cardId)
     try {
-      // Use the new endpoint to set primary card
       const response = await axios.put(`${api}user/${user_id}/card/${cardId}/set-primary`)
-
       if (response.status === 200) {
-        setSelectedCardId(cardId)
-        
-        // Update local state to reflect the changes
-        const updatedCards = cardsDetails.map((card) => ({
-          ...card,
-          is_selected: card.id === cardId ? 1 : 0,
-          is_default: card.id === cardId ? 1 : 0,
-        }))
-        
-        setCardsDetails(updatedCards)
-        
-        // Update Redux store
-        dispatch(setCard({ cardsDetails: updatedCards }))
-
-        console.log("Primary card updated successfully:", cardId)
+        showSnackbar('Primary card saved', null, null, 2500)
       }
-    } catch (error) {
-      console.error("Error selecting card:", error)
-      Alert.alert("Error", "Failed to set primary card. Please try again.")
+    } catch (err) {
+      console.error('Failed to set primary:', err)
+      showSnackbar('Set primary failed. Retry', 'Retry', () => performSetPrimary(cardId), 5000)
+      // revert to previous if available
+      if (pendingPrimaryRef.current) {
+        setSelectedCardId(pendingPrimaryRef.current.previousSelected)
+        const restored = cardsDetails.map((card) => ({
+          ...card,
+          is_selected: card.id === pendingPrimaryRef.current.previousSelected ? 1 : 0,
+          is_default: card.id === pendingPrimaryRef.current.previousSelected ? 1 : 0,
+        }))
+        setCardsDetails(restored)
+        dispatch(setCard({ cardsDetails: restored }))
+      }
     } finally {
       setUpdatingCardId(null)
+      pendingPrimaryRef.current = null
     }
   }
 
@@ -243,6 +384,13 @@ const PaymentMethodsScreen = ({ navigation }) => {
     const isSelected = item.id === selectedCardId
     const isUpdating = updatingCardId === item.id
     const cardLogo = item.card_type?.toLowerCase() === "visa" ? visaIcon : mastercardIcon
+
+    const togglePreferred = () => {
+      const updated = cardsDetails.map(c => c.id === item.id ? { ...c, preferred: !c.preferred } : c)
+      setCardsDetails(applySort(updated))
+      saveCachedCustomerCards(String(user_id), updated).catch(() => {})
+      showSnackbar(updated.find(c => c.id === item.id).preferred ? 'Marked preferred' : 'Preference removed', null, null, 2500)
+    }
 
     return (
       <View style={styles.cardItemContainer}>
@@ -274,6 +422,10 @@ const PaymentMethodsScreen = ({ navigation }) => {
           </View>
         </TouchableOpacity>
 
+        <TouchableOpacity onPress={togglePreferred} style={[styles.prefButton, item.preferred && styles.prefButtonActive]}>
+          <Icon name={item.preferred ? 'bookmark' : 'bookmark-outline'} type="material-community" size={20} color={item.preferred ? '#F59E0B' : '#94A3B8'} />
+        </TouchableOpacity>
+
         <TouchableOpacity 
           style={[styles.deleteButton, (isLoading || isUpdating) && styles.deleteButtonDisabled]} 
           onPress={() => handleDeleteCard(item.id)} 
@@ -293,43 +445,11 @@ const PaymentMethodsScreen = ({ navigation }) => {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const toggleDrawer = useCallback(() => setDrawerOpen((prev) => !prev), [])
 
-  // WebView component for Paystack
-  if (showPaystackWebView) {
-    return (
-      <SafeAreaView style={styles.safeArea}>
-        <StatusBar barStyle="dark-content" backgroundColor="#F8FBFD" />
-        {/* Header */}
-        <View style={styles.webViewHeader}>
-          <TouchableOpacity onPress={() => setShowPaystackWebView(false)} style={styles.backButton}>
-            <Icon name="arrow-back" type="material" size={24} color="#0F172A" />
-          </TouchableOpacity>
-          <Text style={styles.webViewHeaderTitle}>Add Card with Paystack</Text>
-          <View style={{ width: 40 }} />
-        </View>
-        <WebView
-          source={{ uri: authorizationUrl }}
-          style={styles.webView}
-          startInLoadingState={true}
-          javaScriptEnabled={true}
-          domStorageEnabled={true}
-          onNavigationStateChange={(navState) => {
-            const { url } = navState;
-            console.log("WebView URL:", url);
+  // WebView will be rendered as a modal inside the main screen return
 
-            if (url.startsWith("nthome://AddPaymentMethodScreen")) {
-              const params = new URL(url).searchParams;
-              const reference = params.get("reference");
+  // Snackbar UI
+  const snackbarTranslate = snackbarAnim.interpolate({ inputRange: [0, 1], outputRange: [80, 0] })
 
-              if (reference) handleSuccessfulTransaction(reference);
-
-              setShowPaystackWebView(false);
-              setAuthorizationUrl("");
-            }
-          }}
-        />
-      </SafeAreaView>
-    )
-  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -393,7 +513,14 @@ const PaymentMethodsScreen = ({ navigation }) => {
         <View style={styles.cardsListSection}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Your Payment Cards</Text>
-            <Text style={styles.cardCount}>{cardsDetails.length} cards</Text>
+            <View style={styles.sortControlRow}>
+              <TouchableOpacity onPress={() => setSortMode('primary')} style={[styles.sortButton, sortMode === 'primary' && styles.sortButtonActive]}>
+                <Text style={[styles.sortButtonText, sortMode === 'primary' && styles.sortButtonTextActive]}>Primary</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setSortMode('recent')} style={[styles.sortButton, sortMode === 'recent' && styles.sortButtonActive]}>
+                <Text style={[styles.sortButtonText, sortMode === 'recent' && styles.sortButtonTextActive]}>Most recent</Text>
+              </TouchableOpacity>
+            </View>
           </View>
           
           {cardsDetails.length === 0 ? (
@@ -437,7 +564,101 @@ const PaymentMethodsScreen = ({ navigation }) => {
         </View>
       </View>
       {drawerOpen && <CustomDrawer isOpen={drawerOpen} toggleDrawer={toggleDrawer} navigation={navigation} />}
+      <ModalWebView
+        visible={showPaystackWebView}
+        url={authorizationUrl}
+        loading={webviewLoading}
+        onClose={() => { setShowPaystackWebView(false); setAuthorizationUrl(""); }}
+        onShouldStartLoadWithRequest={(request) => {
+          const url = request?.url || ''
+          console.log('ModalWebView request:', url)
+
+          // If the server callback URL is hit, it will include 'paystack-callback' and reference
+          if (url.includes('paystack-callback')) {
+            const m = url.match(/[?&]reference=([^&]+)/)
+            const reference = m ? decodeURIComponent(m[1]) : null
+            if (reference) handleSuccessfulTransaction(reference)
+            setShowPaystackWebView(false)
+            setAuthorizationUrl("")
+            return false
+          }
+
+          // Also handle direct app deep-link callbacks if they appear
+          if (url && url.startsWith('nthome://AddPaymentMethodScreen')) {
+            const m = url.match(/[?&]reference=([^&]+)/)
+            const reference = m ? decodeURIComponent(m[1]) : null
+            if (reference) handleSuccessfulTransaction(reference)
+            setShowPaystackWebView(false)
+            setAuthorizationUrl("")
+            return false
+          }
+
+          return true
+        }}
+        onLoadStart={() => setWebviewLoading(true)}
+        onLoadEnd={() => setWebviewLoading(false)}
+      />
     </SafeAreaView>
+  )
+}
+
+// Render modal WebView for Paystack inside the same screen so we keep context
+const ModalWebView = ({ visible, url, loading, onClose, onShouldStartLoadWithRequest, onLoadStart, onLoadEnd }) => {
+  return (
+    <Modal visible={visible} animationType="slide" transparent>
+      <View style={styles.modalOverlay}>
+        <View style={[styles.modalContainer, { height: '80%' }]}>
+          <SafeAreaView style={{ flex: 1 }}>
+            <View style={styles.webViewHeader}>
+              <TouchableOpacity onPress={onClose} style={styles.backButton}>
+                <Icon name="close" type="material" size={20} color="#0F172A" />
+              </TouchableOpacity>
+              <Text style={styles.webViewHeaderTitle}>Add Card</Text>
+              <View style={{ width: 40 }} />
+            </View>
+            <View style={{ flex: 1 }}>
+              {loading && <ActivityIndicator style={styles.modalSpinner} size="large" color="#0DCAF0" />}
+              {url ? (
+                <WebView
+                  source={{ uri: url }}
+                  style={{ flex: 1, width: '100%', height: '100%' }}
+                  startInLoadingState={true}
+                  javaScriptEnabled={true}
+                  domStorageEnabled={true}
+                  onShouldStartLoadWithRequest={onShouldStartLoadWithRequest}
+                  onLoadStart={onLoadStart}
+                  onLoadEnd={onLoadEnd}
+                />
+              ) : (
+                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 16 }}>
+                  <Text style={{ color: '#64748B' }}>Unable to load payment page.</Text>
+                </View>
+              )}
+            </View>
+          </SafeAreaView>
+        </View>
+      </View>
+    </Modal>
+  )
+}
+
+// Snackbar component rendered at bottom of screen
+const Snackbar = ({ visible, message, actionLabel, onAction, animValue }) => {
+  if (!visible) return null
+  return (
+    <Animated.View
+      pointerEvents="box-none"
+      style={[styles.snackbar, { transform: [{ translateY: animValue }], opacity: animValue.interpolate({ inputRange: [0, 1], outputRange: [0, 1] }) }]}
+    >
+      <View style={styles.snackbarInner}>
+        <Text style={styles.snackbarText}>{message}</Text>
+        {actionLabel ? (
+          <TouchableOpacity onPress={onAction} style={styles.snackbarAction}>
+            <Text style={styles.snackbarActionText}>{actionLabel}</Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
+    </Animated.View>
   )
 }
 
@@ -820,6 +1041,97 @@ const styles = StyleSheet.create({
   webView: {
     flex: 1,
   },
+  snackbar: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    bottom: 24,
+    zIndex: 2000,
+  },
+  snackbarInner: {
+    backgroundColor: '#111827',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  snackbarText: {
+    color: '#fff',
+    flex: 1,
+    marginRight: 12,
+  },
+  snackbarAction: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  snackbarActionText: {
+    color: '#0DCAF0',
+    fontWeight: '700',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
+  },
+  modalContainer: {
+    width: '100%',
+    maxHeight: '90%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  modalSpinner: {
+    position: 'absolute',
+    top: 16,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+  },
+  sortControlRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  sortButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: 'transparent',
+    marginLeft: 8,
+  },
+  sortButtonActive: {
+    backgroundColor: '#E6F6F8',
+  },
+  sortButtonText: {
+    color: '#64748B',
+    fontWeight: '600',
+  },
+  sortButtonTextActive: {
+    color: '#0DCAF0',
+  },
+  prefButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
+    backgroundColor: 'transparent',
+  },
+  prefButtonActive: {
+    backgroundColor: 'rgba(245,158,11,0.08)'
+  }
 })
 
 export default PaymentMethodsScreen
+
+// Exported snackbar container so it can be used by the screen component
+export { Snackbar }

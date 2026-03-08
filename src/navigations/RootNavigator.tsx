@@ -37,7 +37,6 @@ import { onAuthStateChanged } from "firebase/auth";
 import ProtectedScreen from "../WelcomeScreens/ProtectedScreen";
 // import ForgotPasswordScreen from "../WelcomeScreens/ForgotPasswordScreen";
 // import DriverWallet from "../components/WalletDriver";
-import TripCancellationModal from "../components/TripCancelationModal";
 import CustomerChat from "../customerscreens/CustomerChat";
 import PaymentSuccess from "../components/payment-success";
 import RideRatingScreen from "../customerscreens/RideRatingScreen";
@@ -445,7 +444,7 @@ export default function RootNavigator() {
         <Stack.Screen name="AddPaymentMethodScreen" component={AddPaymentMethodScreen} options={{ headerShown: false }} />
         <Stack.Screen name="About" component={AboutScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Support" component={SupportScreen} options={{ headerShown: false }} />
-        <Stack.Screen name="TripCancellationModal" component={TripCancellationModal} options={{ headerShown: false }} />
+        {/* TripCancellationModal is used as an in-component modal; avoid registering as a navigation screen */}
         <Stack.Screen name="CustomerChat" component={CustomerChat} options={{ headerShown: false }} />
         <Stack.Screen name="Home" component={HomeScreen} options={{ headerShown: false }} />
         <Stack.Screen name="RideRatingScreen" component={RideRatingScreen} options={{ headerShown: false }} />

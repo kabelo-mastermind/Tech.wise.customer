@@ -19,7 +19,7 @@ import { DestinationContext, OriginContext } from "../contexts/contexts"
 import { DriverOriginContext } from "../contexts/driverContexts"
 import axios from "axios"
 import NetInfo from '@react-native-community/netinfo'
-import { saveCachedDriverRating, getCachedDriverRating } from '../utils/storage'
+import { saveCachedDriverRating, getCachedDriverRating, getCachedCustomerCards } from '../utils/storage'
 import { addPendingUpdate, getPendingUpdates } from '../utils/storage'
 import { useSelector } from "react-redux"
 import { useDispatch } from "react-redux"
@@ -186,6 +186,38 @@ const displayClass = classMap[classType] || classType;
 
   const handleButtonClick = async () => {
     if (selectedPaymentMethod) {
+      // If user chose Credit Card, ensure they have a saved/authorized card first
+      if (selectedPaymentMethod === "Credit Card") {
+        try {
+          const cached = await getCachedCustomerCards(String(user_id)).catch(() => null)
+          const cards = (cached && cached.list) || []
+          const selected = cards.find((c) => c.is_selected === 1 || c.is_default === 1) || cards[0]
+          const hasLocal = !!(selected && (selected.authorization_code || selected.last_four_digits || selected.id))
+          if (!hasLocal) {
+            // Fallback to server check
+            try {
+              const res = await axios.get(`${api}users/${user_id}/has-authorization`)
+              if (!(res.data && res.data.hasAuthorization)) {
+                Alert.alert(
+                  'No Saved Card',
+                  'You have no saved card on file. Add a card to pay by credit card before confirming pickup.',
+                  [
+                    { text: 'Add Card', onPress: () => { try { navigation.navigate('PaymentMethodsScreen') } catch (e) { navigation.navigate('Profile') } } },
+                    { text: 'Cancel', style: 'cancel' },
+                  ],
+                )
+                return
+              }
+            } catch (e) {
+              Alert.alert('No Saved Card', 'You have no saved card on file. Add a card to pay by credit card before confirming pickup.')
+              return
+            }
+          }
+        } catch (e) {
+          Alert.alert('No Saved Card', 'You have no saved card on file. Add a card to pay by credit card before confirming pickup.')
+          return
+        }
+      }
       setIsLoading(true)
       try {
         let tripData = {
@@ -246,7 +278,7 @@ const displayClass = classMap[classType] || classType;
           tripId: tripResponse.data.tripId,
           user_id: user_id,
         }
-
+ 
         await axios.post(api + "payment", paymentData)
 
         emitTripRequestToDrivers(tripData, extractedData.driverId)
@@ -357,6 +389,43 @@ useEffect(() => {
 
   fetchDriverRating();
 }, [driver_id]);
+
+// Load selected customer card's last four digits when credit card is selected
+useEffect(() => {
+  const fetchSelectedCardLastFour = async () => {
+    if (!user_id) return
+    try {
+      // try cached cards first
+      const cached = await getCachedCustomerCards(String(user_id))
+      const cards = cached?.list || []
+      let selected = cards.find((c) => c.is_selected === 1 || c.is_default === 1) || cards[0]
+
+      // if no cached selected card, try to fetch from server when online
+      if (!selected) {
+        try {
+          const net = await NetInfo.fetch()
+          if (net.isConnected) {
+            const res = await axios.get(`${api}customer-cards/${user_id}`)
+            const fetched = res.data || []
+            selected = fetched.find((c) => c.is_selected === 1 || c.is_default === 1) || fetched[0]
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      if (selected && selected.last_four_digits) {
+        setLastFourDigits(String(selected.last_four_digits))
+      } else {
+        setLastFourDigits("")
+      }
+    } catch (e) {
+      setLastFourDigits("")
+    }
+  }
+
+  if (selectedPaymentMethod === "Credit Card") fetchSelectedCardLastFour()
+}, [user_id, selectedPaymentMethod])
 
 
   // Function to render stars based on rating
@@ -487,7 +556,35 @@ useEffect(() => {
                       styles.paymentOption,
                       selectedPaymentMethod === "Credit Card" && styles.selectedPaymentOption,
                     ]}
-                    onPress={() => setSelectedPaymentMethod("Credit Card")}
+                    onPress={async () => {
+                      try {
+                        const cached = await getCachedCustomerCards(String(user_id)).catch(() => null)
+                        const cards = (cached && cached.list) || []
+                        let selected = cards.find((c) => c.is_selected === 1 || c.is_default === 1) || cards[0]
+                        if (selected && (selected.authorization_code || selected.last_four_digits || selected.id)) {
+                          setSelectedPaymentMethod("Credit Card")
+                          return
+                        }
+
+                        // Fallback to server check
+                        try {
+                          const res = await axios.get(`${api}users/${user_id}/has-authorization`)
+                          if (res.data && res.data.hasAuthorization) {
+                            setSelectedPaymentMethod("Credit Card")
+                            return
+                          }
+                        } catch (e) {}
+                      } catch (e) {}
+
+                      Alert.alert(
+                        'No Saved Card',
+                        'You have no saved card on file. Add a card to pay by credit card.',
+                        [
+                          { text: 'Add Card', onPress: () => { try { navigation.navigate('PaymentMethodsScreen') } catch (e) { navigation.navigate('Profile') } } },
+                          { text: 'Cancel', style: 'cancel' },
+                        ],
+                      )
+                    }}
                   >
                     <Image source={paymentImages["Credit Card"]} style={styles.paymentImage} />
                     <View style={styles.cardDetails}>

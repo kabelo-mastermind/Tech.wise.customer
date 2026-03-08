@@ -5,6 +5,7 @@ import { View, Text } from 'react-native-animatable';
 import { Icon } from 'react-native-elements';
 import { DestinationContext, OriginContext } from '../contexts/contexts';
 import { useSelector } from 'react-redux'; // Import useSelector
+import { connectSocket, listenToTripDeclined, stopListeningToTripDeclined, listenToMultipleTripStatuses, stopListeningToMultipleTripStatuses } from '../configSocket/socketConfig';
 import axios from 'axios'; // Import axios for API calls
 import { api } from '../../api';
 import { useFocusEffect } from '@react-navigation/native';
@@ -14,6 +15,35 @@ import { db } from '../../FirebaseConfig';
 import { collection, getDocs } from 'firebase/firestore';
 
 const { height } = Dimensions.get("window");
+
+  const MAX_RESULTS = 5 // maximum drivers to show per radius
+
+  // Select up to `max` drivers while attempting to balance vehicle classes (round-robin by `item.class`).
+  const selectBalancedDrivers = (list, max) => {
+    if (!Array.isArray(list) || list.length === 0) return []
+    const groups = {}
+    for (const item of list) {
+      const key = item && (item.class !== undefined && item.class !== null) ? String(item.class) : 'unknown'
+      if (!groups[key]) groups[key] = []
+      groups[key].push(item)
+    }
+
+    const keys = Object.keys(groups)
+    const selected = []
+    // Round-robin pick from each class group in the order they first appear
+    while (selected.length < max) {
+      let added = false
+      for (const k of keys) {
+        if (groups[k].length > 0) {
+          selected.push(groups[k].shift())
+          added = true
+          if (selected.length >= max) break
+        }
+      }
+      if (!added) break
+    }
+    return selected
+  }
 
 const CarListingBottomSheet = ({ navigation, route }) => {
   const { dispatchDestination } = useContext(DestinationContext);
@@ -25,6 +55,7 @@ const CarListingBottomSheet = ({ navigation, route }) => {
   const duration = useSelector(state => state.location.duration);
   // console.log("disstanceeeeeeeeeeeeeee:", distance, "durationssssssssssss:", duration);
   const driverId = route?.params?.driverId || null;
+  const user_id = useSelector((state) => state.auth?.user?.user_id);
   // const driverId = useSelector((state) => state.trip.tripData?.driver_id || "");
   // console.log("Driver IDoooooooooooooo:", driverId);
 
@@ -138,10 +169,22 @@ const CarListingBottomSheet = ({ navigation, route }) => {
   const filterByRadius = (fullList, center, radius) => {
     if (!center) return fullList
     return fullList.filter(item => {
-      // Filter out offline drivers
-      if (item.driverState !== 'online') {
-        console.log('Filtering out driver (not online):', item.driverName, 'State:', item.driverState);
-        return false
+      // Filter out drivers who are neither online nor recently flagged (declined/canceled/no-response)
+      try {
+        let statusParts = '';
+        if (Array.isArray(item.driverStatus)) statusParts += item.driverStatus.join(' ');
+        else statusParts += item.driverStatus || '';
+        statusParts += ' ' + (item.driverState || '');
+        const combined = statusParts.toString().toLowerCase();
+        const isFlagged = ['declined', 'canceled', 'cancelled', 'no-response', 'no response', "didn't respond", 'noresponse'].some(s => combined.includes(s));
+
+        if (item.driverState !== 'online' && !isFlagged) {
+          console.log('Filtering out driver (not online):', item.driverName, 'State:', item.driverState);
+          return false;
+        }
+      } catch (e) {
+        // If anything goes wrong, be permissive and include the item so it can be inspected
+        console.warn('Error checking driver status for filtering, including driver by default', e);
       }
       
       const coords = getItemCoords(item)
@@ -157,6 +200,34 @@ const CarListingBottomSheet = ({ navigation, route }) => {
     })
   }
 
+  // Helper: determine if a driver should be flagged (declined, canceled, no-response)
+  const isFlaggedDriver = (item) => {
+    if (!item) return false;
+    const combined = `${item.driverStatus || ''} ${item.driverState || ''}`.toString().toLowerCase();
+    return ['declined', 'canceled', 'cancelled', 'no-response', 'no response', "didn't respond", 'noresponse'].some(s => combined.includes(s));
+  }
+
+  // Move flagged drivers to the end of the list while preserving order otherwise
+  const reorderDrivers = (list) => {
+    if (!Array.isArray(list)) return list || [];
+    const normal = [];
+    const flagged = [];
+    list.forEach(item => {
+      if (isFlaggedDriver(item)) flagged.push(item);
+      else normal.push(item);
+    });
+    return [...normal, ...flagged];
+  }
+
+  const getFlagLabel = (item) => {
+    if (!item) return null;
+    const combined = `${item.driverStatus || ''} ${item.driverState || ''}`.toString().toLowerCase();
+    if (combined.includes('declined')) return 'Driver declined';
+    if (combined.includes('canceled') || combined.includes('cancelled')) return 'Driver cancelled';
+    if (combined.includes('no-response') || combined.includes('no response') || combined.includes("didn't respond") || combined.includes('noresponse')) return 'No response';
+    return null;
+  }
+
   // Move fetch function out so it can be retried from a button
   const fetchCarData = async () => {
     try {
@@ -166,7 +237,7 @@ const CarListingBottomSheet = ({ navigation, route }) => {
         const cached = await getCachedCarListings();
         const cachedLocations = await getCachedDriverLocations();
         
-        if (cached && Array.isArray(cached.list) && cached.list.length > 0) {
+          if (cached && Array.isArray(cached.list) && cached.list.length > 0) {
           // Merge cached locations with cached car listings
           const carDataWithLocations = cached.list.map(car => {
             const loc = cachedLocations && (
@@ -189,9 +260,20 @@ const CarListingBottomSheet = ({ navigation, route }) => {
           });
           
           setCarDataFull(carDataWithLocations);
-          // filter cached list with current radius
+          // filter cached list with current radius, reorder flagged drivers and select balanced top results
           const center = routeCenter || originCoords
-          setCarData(filterByRadius(carDataWithLocations, center, radiusKm));
+          let filtered = reorderDrivers(filterByRadius(carDataWithLocations, center, radiusKm));
+          // sort by distance to center so each class group's items are ordered by proximity
+          try {
+            filtered.sort((a, b) => {
+              const ac = getItemCoords(a)
+              const bc = getItemCoords(b)
+              const ad = ac ? haversineKm(center, ac) : Infinity
+              const bd = bc ? haversineKm(center, bc) : Infinity
+              return ad - bd
+            })
+          } catch (e) {}
+          setCarData(selectBalancedDrivers(filtered, MAX_RESULTS));
           setIsCachedData(true);
           setCachedSavedAt(cached.savedAt || null);
         } else {
@@ -238,7 +320,17 @@ const CarListingBottomSheet = ({ navigation, route }) => {
 
       setCarDataFull(fullCarData);
       const center = routeCenter || originCoords
-      setCarData(filterByRadius(fullCarData, center, radiusKm));
+      let filtered = reorderDrivers(filterByRadius(fullCarData, center, radiusKm));
+      try {
+        filtered.sort((a, b) => {
+          const ac = getItemCoords(a)
+          const bc = getItemCoords(b)
+          const ad = ac ? haversineKm(center, ac) : Infinity
+          const bd = bc ? haversineKm(center, bc) : Infinity
+          return ad - bd
+        })
+      } catch (e) {}
+      setCarData(selectBalancedDrivers(filtered, MAX_RESULTS));
       setIsCachedData(false);
       // cache for offline use
       saveCachedCarListings(fullCarData).catch(() => {});
@@ -261,6 +353,55 @@ const CarListingBottomSheet = ({ navigation, route }) => {
       };
     }, [])
   );
+  useEffect(() => {
+    // Connect customer socket and listen for driver decline/cancel events
+    if (!user_id) return;
+    try {
+      connectSocket(user_id, 'customer');
+    } catch (e) {
+      console.warn('Socket connect failed in CarListingBottomSheet', e);
+    }
+
+    const handleDecline = (data) => {
+      const incomingDriverId = data?.driverId || data?.driver_id || data?.driver || data?.driverIdString;
+      if (!incomingDriverId) return;
+      setCarDataFull((prev = []) => {
+        const updated = prev.map(item => {
+          if (String(item.driverId) === String(incomingDriverId) || String(item.userId) === String(incomingDriverId)) {
+            return { ...item, driverStatus: 'declined', driverState: 'declined' };
+          }
+          return item;
+        });
+        // update filtered & reordered list, then limit & balance to MAX_RESULTS
+        const center = routeCenter || originCoords;
+        let filtered = reorderDrivers(filterByRadius(updated, center, radiusKm));
+        try {
+          filtered.sort((a, b) => {
+            const ac = getItemCoords(a)
+            const bc = getItemCoords(b)
+            const ad = ac ? haversineKm(center, ac) : Infinity
+            const bd = bc ? haversineKm(center, bc) : Infinity
+            return ad - bd
+          })
+        } catch (e) {}
+        setCarData(selectBalancedDrivers(filtered, MAX_RESULTS));
+        return updated;
+      });
+    };
+
+    listenToTripDeclined(handleDecline);
+    // Also listen to generic status stream just in case
+    listenToMultipleTripStatuses((status, payload) => {
+      if (status === 'declined' || status === 'start' && payload?.action === 'declined') handleDecline(payload);
+      if (status === 'end' && payload?.action === 'canceled') handleDecline(payload);
+    });
+
+    return () => {
+      try { stopListeningToTripDeclined(); } catch (e) {}
+      try { stopListeningToMultipleTripStatuses(); } catch (e) {}
+    };
+  }, [user_id, routeCenter, originCoords, radiusKm]);
+
   useEffect(() => {
     // initial fetch (if online)
     fetchCarData();
@@ -316,7 +457,17 @@ const CarListingBottomSheet = ({ navigation, route }) => {
     // Re-filter when radius, origin, or carDataFull changes
     const center = routeCenter || originCoords
     if (carDataFull && carDataFull.length > 0) {
-      setCarData(filterByRadius(carDataFull, center, radiusKm))
+      let filtered = reorderDrivers(filterByRadius(carDataFull, center, radiusKm))
+      try {
+        filtered.sort((a, b) => {
+          const ac = getItemCoords(a)
+          const bc = getItemCoords(b)
+          const ad = ac ? haversineKm(center, ac) : Infinity
+          const bd = bc ? haversineKm(center, bc) : Infinity
+          return ad - bd
+        })
+      } catch (e) {}
+      setCarData(selectBalancedDrivers(filtered, MAX_RESULTS))
     }
 
     // Logging the distance and duration whenever they change
@@ -415,6 +566,11 @@ const CarListingBottomSheet = ({ navigation, route }) => {
                     </View>
                     <Text style={styles.carPrice}>R{Math.round(item.costPerKm * distance)}</Text>
                   </View>
+                  {isFlaggedDriver(item) && (
+                    <View style={styles.statusBadge}>
+                      <Text style={styles.statusText}>{getFlagLabel(item)}</Text>
+                    </View>
+                  )}
                 </View>
               </Pressable>
             )}
@@ -565,5 +721,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: 'bold',
     color: '#007BFF',
+  },
+  statusBadge: {
+    marginTop: 8,
+    alignSelf: 'flex-start',
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  statusText: {
+    fontSize: 12,
+    color: '#6B7280',
+    fontWeight: '600',
   },
 });

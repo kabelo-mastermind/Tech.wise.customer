@@ -194,6 +194,40 @@ const MapComponent = ({
       coordinates.push(driverLocation)
     }
 
+    if (coordinates.length === 0) return
+
+    // If we have exactly two points AND one is driverLocation, keep driver at center
+    const hasDriver = driverLocation && driverLocation.latitude && driverLocation.longitude
+    if (coordinates.length === 2 && hasDriver) {
+      // Determine the other point (destination or origin)
+      const other = coordinates.find(c => !(c.latitude === driverLocation.latitude && c.longitude === driverLocation.longitude))
+      if (other) {
+        // Compute deltas that will include the other point while centering on driver
+        const latDiff = Math.abs(other.latitude - driverLocation.latitude)
+        const lngDiff = Math.abs(other.longitude - driverLocation.longitude)
+
+        // Add padding multiplier and minimum delta to avoid overzoom
+        const PADDING_MULTIPLIER = 1.8
+        const minDelta = 0.005
+        const latitudeDelta = Math.max(latDiff * PADDING_MULTIPLIER, minDelta)
+        const longitudeDelta = Math.max(lngDiff * PADDING_MULTIPLIER, minDelta)
+
+        // Vertical offset so the driver appears lower on the screen (stable when toggling marker)
+        const VERTICAL_OFFSET_FACTOR = 0.25 // 0 = exact center, positive moves driver lower on screen
+        const centerLatitude = driverLocation.latitude + (latitudeDelta * VERTICAL_OFFSET_FACTOR)
+
+        // Animate region with driver offset from center
+        mapRef.current.animateToRegion({
+          latitude: centerLatitude,
+          longitude: driverLocation.longitude,
+          latitudeDelta,
+          longitudeDelta,
+        }, 500)
+        return
+      }
+    }
+
+    // Fallback: use fitToCoordinates for multiple points
     if (coordinates.length > 0) {
       mapRef.current.fitToCoordinates(coordinates, {
         edgePadding: {

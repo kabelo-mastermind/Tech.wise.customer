@@ -1,14 +1,16 @@
 "use client"
 
 import { useMemo, useEffect, useRef, useState } from "react"
-import { StyleSheet, Pressable, View, Text, Alert, Dimensions, StatusBar, ActivityIndicator } from "react-native"
+import { StyleSheet, Pressable, View, Text, Alert, Dimensions, StatusBar, ActivityIndicator, InteractionManager } from "react-native"
 import NetInfo from '@react-native-community/netinfo'
 import { addPendingUpdate } from '../utils/storage'
 import {
   connectSocket,
   listenToTripAccepted,
+  listenToTripDeclined,
   stopListeningToTripAccepted,
   stopListeningToTripDeclined,
+  emitTripCanceltToDrivers,
 } from "../configSocket/socketConfig"
 import { useSelector } from "react-redux"
 import { api } from "../../api"
@@ -56,6 +58,21 @@ const TripLoadingResponse = ({ navigation, route }) => {
     Alert.alert(title, message, buttons)
     return true
   }
+
+  // Helper to navigate back to RequestScreen and then open CarListing safely
+  const navigateToRequestAndCarListing = () => {
+    try {
+      navigation.navigate('RequestScreen')
+      InteractionManager.runAfterInteractions(() => {
+        if (driverId) navigation.navigate('CarListingBottomSheet', { driverId })
+      })
+    } catch (e) {
+      // fallback: try direct navigation to CarListing
+      try {
+        if (driverId) navigation.navigate('CarListingBottomSheet', { driverId })
+      } catch (err) {}
+    }
+  }
   
   // Memoize fetchTripStatuses to prevent recreation on every render
   const fetchTripStatuses = useRef(async () => {
@@ -78,6 +95,38 @@ const TripLoadingResponse = ({ navigation, route }) => {
       setTripStatus("accepted")
       setModalVisible(false)
       fetchTripStatuses.current()
+    })
+
+    // Listen for declines while waiting for driver
+    listenToTripDeclined((data) => {
+      console.log('❌ Trip declined via socket (TripLoadingResponse):', data);
+      // mark manual cancel so other timeouts don't run
+      setIsManuallyCanceled(true);
+      // stop local countdown and reset UI
+      try { if (countdownRef.current) { clearInterval(countdownRef.current); } } catch (e) {}
+      setSecondsLeft(0);
+
+      // Friendly alert for the user, then navigate back when acknowledged
+      const handled = showAlertOnce(
+        'trip-declined',
+        'Trip Declined',
+        'The driver has declined this request. Please choose another driver.',
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              setModalVisible(false);
+              navigateToRequestAndCarListing();
+            },
+          },
+        ]
+      );
+
+      if (!handled) {
+        // If alert already shown for some reason, ensure UI still resets
+        setModalVisible(false);
+        navigateToRequestAndCarListing();
+      }
     })
 
     return () => {
@@ -108,8 +157,11 @@ const TripLoadingResponse = ({ navigation, route }) => {
                   'Your queued trip was cancelled while offline. Try connecting to the network to continue.'
                 );
                 setModalVisible(false)
+                // navigate safely to RequestScreen then open CarListingBottomSheet
                 navigation.navigate('RequestScreen')
-                setTimeout(() => { navigation.navigate('CarListingBottomSheet', { driverId }) }, 50)
+                InteractionManager.runAfterInteractions(() => {
+                  if (driverId) navigation.navigate('CarListingBottomSheet', { driverId })
+                })
               } else if (tripId) {
                 // trip has server id -> enqueue a cancel status to submit when back online
                 try {
@@ -130,8 +182,11 @@ const TripLoadingResponse = ({ navigation, route }) => {
                   'You went offline — trip cancelled locally and will be updated when online.'
                 );
                 setModalVisible(false)
+                // navigate safely to RequestScreen then open CarListingBottomSheet
                 navigation.navigate('RequestScreen')
-                setTimeout(() => { navigation.navigate('CarListingBottomSheet', { driverId }) }, 50)
+                InteractionManager.runAfterInteractions(() => {
+                  if (driverId) navigation.navigate('CarListingBottomSheet', { driverId })
+                })
               }
             } catch (e) {
               // ignore
@@ -280,10 +335,7 @@ const TripLoadingResponse = ({ navigation, route }) => {
         }
 
         setModalVisible(false)
-        navigation.navigate('RequestScreen')
-        setTimeout(() => {
-          navigation.navigate('CarListingBottomSheet', { driverId })
-        }, 50)
+        navigateToRequestAndCarListing()
         return
       }
 
@@ -309,20 +361,14 @@ const TripLoadingResponse = ({ navigation, route }) => {
             text: 'OK',
             onPress: () => {
               setModalVisible(false)
-              navigation.navigate('RequestScreen')
-              setTimeout(() => {
-                navigation.navigate('CarListingBottomSheet', { driverId })
-              }, 50)
+              navigateToRequestAndCarListing()
             },
           },
         ]
       )
       if (!shown) {
         setModalVisible(false)
-        navigation.navigate('RequestScreen')
-        setTimeout(() => {
-          navigation.navigate('CarListingBottomSheet', { driverId })
-        }, 50)
+        navigateToRequestAndCarListing()
       }
     } catch (error) {
       console.error('Failed to update trip status:', error)
@@ -338,7 +384,7 @@ const TripLoadingResponse = ({ navigation, route }) => {
           },
         })
       } catch (e) {}
-      navigation.navigate('CarListingBottomSheet', { driverId })
+      navigateToRequestAndCarListing()
     }
   }
 
@@ -399,14 +445,21 @@ const TripLoadingResponse = ({ navigation, route }) => {
                             }),
                           })
                           console.log("Trip status updated:", response);
+                          // Notify driver(s) that trip was cancelled (only for non-pending trips)
+                          try {
+                            const outgoingTripData = (reduxTrip && reduxTrip.tripId) ? reduxTrip : { tripId };
+                            if (driverId) {
+                              emitTripCanceltToDrivers(outgoingTripData, driverId);
+                              console.log('📤 Emitted newTripCancel from TripLoadingResponse', { tripId, driverId });
+                            }
+                          } catch (emitErr) {
+                            console.error('Error emitting newTripCancel from TripLoadingResponse:', emitErr);
+                          }
                         }
 
                         // Navigate back to relevant screens
                         setModalVisible(false);
-                        navigation.navigate("RequestScreen");
-                        setTimeout(() => {
-                          navigation.navigate("CarListingBottomSheet", { driverId });
-                        }, 50);
+                        navigateToRequestAndCarListing()
                       } catch (error) {
                         console.error("Cancel trip error:", error);
                         try {

@@ -313,3 +313,47 @@ export const clearRecentService = async () => {
     console.warn('clearRecentService error', e);
   }
 };
+
+// Trip and user-level cache clearing utilities
+export const clearTripCaches = async (userId: string | number) => {
+  try {
+    if (!userId) return;
+    await AsyncStorage.removeItem(`activeTripState_${userId}`);
+    await AsyncStorage.removeItem(`cachedTripStatuses_${userId}`);
+    await AsyncStorage.removeItem(`cachedRemainingTime_${userId}`);
+    await AsyncStorage.removeItem(`cachedDriverState_${userId}`);
+    await AsyncStorage.removeItem(`driverOnlineStatus_${userId}`);
+  } catch (e) {
+    console.warn('clearTripCaches error', e);
+  }
+};
+
+export const clearAllUserCaches = async (userId?: string | number) => {
+  try {
+    // Remove general keys
+    await AsyncStorage.removeItem(PENDING_UPDATES_KEY);
+    await AsyncStorage.removeItem(CAR_LISTINGS_KEY);
+    await AsyncStorage.removeItem(DRIVER_LOCATIONS_KEY);
+    await AsyncStorage.removeItem(RECENT_DESTINATIONS_KEY);
+    await AsyncStorage.removeItem(RECENT_SERVICE_KEY);
+    // Remove per-user keys when userId provided
+    if (userId) {
+      await AsyncStorage.removeItem(CUSTOMER_CARDS_KEY_PREFIX + String(userId));
+      await AsyncStorage.removeItem(CUSTOMER_RATING_KEY_PREFIX + String(userId));
+      await AsyncStorage.removeItem(DRIVER_RATING_KEY_PREFIX + String(userId));
+      await AsyncStorage.removeItem(USER_KEY);
+      await AsyncStorage.removeItem(`activeTripState_${userId}`);
+      await AsyncStorage.removeItem(`cachedTripStatuses_${userId}`);
+      await AsyncStorage.removeItem(`cachedRemainingTime_${userId}`);
+      await AsyncStorage.removeItem(`cachedDriverState_${userId}`);
+      await AsyncStorage.removeItem(`driverOnlineStatus_${userId}`);
+      // common convenience keys used across app
+      await AsyncStorage.removeItem('userId');
+      await AsyncStorage.removeItem('emailVerified');
+      await AsyncStorage.removeItem('user_id');
+      await AsyncStorage.removeItem('customer_code');
+    }
+  } catch (e) {
+    console.warn('clearAllUserCaches error', e);
+  }
+};
