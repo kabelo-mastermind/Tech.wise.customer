@@ -139,6 +139,25 @@ export const emitTripCanceltToDrivers = (tripData, driverId) => {
   }
 };
 
+export const emitSOS = (payload) => {
+  if (!socket) return console.error("❌ Socket not initialized");
+  try {
+    socket.emit("sosAlert", payload);
+    console.log("✅ emitSOS emitted", payload);
+  } catch (e) {
+    console.error("❌ emitSOS failed", e);
+  }
+};
+
+export const emitSOSLocationUpdate = (payload) => {
+  if (!socket) return console.error("❌ Socket not initialized");
+  try {
+    socket.emit("sosLocationUpdate", payload);
+  } catch (e) {
+    console.error("❌ emitSOSLocationUpdate failed", e);
+  }
+};
+
 
 // Listen for multiple trip statuses
 export const listenToMultipleTripStatuses = (callback) => {

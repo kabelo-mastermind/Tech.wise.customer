@@ -1,6 +1,6 @@
 "use client"
 
-import { useContext, useEffect, useState } from "react"
+import { useContext, useEffect, useRef, useState } from "react"
 import { Text, View, Dimensions, TouchableOpacity, Image, TouchableWithoutFeedback, StyleSheet, Linking, Alert } from "react-native"
 import { Icon } from "react-native-elements"
 import { colors } from "../global/styles"
@@ -18,6 +18,7 @@ import {
   connectSocket,
   emitTripCanceltToDrivers,
   emitSOS,
+  emitSOSLocationUpdate,
   listenToChatMessages,
   listenToDriverArrival,
   listenToTripAccepted,
@@ -122,6 +123,70 @@ const DestinationScreen = ({ navigation, route }) => {
   // Add this near your other state declarations
   const [showCancelButton, setShowCancelButton] = useState(true)
   const [sosSending, setSosSending] = useState(false);
+  const sosTrackingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const sosEmergencyIdRef = useRef<number | null>(null);
+  const latestSOSContextRef = useRef({
+    driverLocation: null,
+    userOrigin: null,
+    tripId: null,
+    userId: null,
+  });
+
+  useEffect(() => {
+    latestSOSContextRef.current = {
+      driverLocation,
+      userOrigin,
+      tripId: tripData?.tripId || null,
+      userId: user_id || null,
+    };
+  }, [driverLocation, userOrigin, tripData?.tripId, user_id]);
+
+  const stopSOSLiveTracking = () => {
+    if (sosTrackingIntervalRef.current) {
+      clearInterval(sosTrackingIntervalRef.current);
+      sosTrackingIntervalRef.current = null;
+    }
+    sosEmergencyIdRef.current = null;
+  };
+
+  const emitSOSLocationNow = () => {
+    if (!sosEmergencyIdRef.current) return;
+
+    const context = latestSOSContextRef.current;
+    const driverLoc = context?.driverLocation;
+    const fallbackLoc = context?.userOrigin;
+    const latitude = Number(driverLoc?.latitude ?? fallbackLoc?.latitude);
+    const longitude = Number(driverLoc?.longitude ?? fallbackLoc?.longitude);
+    const accuracy = driverLoc?.accuracy ?? fallbackLoc?.accuracy ?? null;
+
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+
+    emitSOSLocationUpdate({
+      emergency_id: sosEmergencyIdRef.current,
+      user_id: context?.userId || null,
+      user_type: "rider",
+      trip_id: context?.tripId || null,
+      latitude,
+      longitude,
+      accuracy,
+    });
+  };
+
+  const startSOSLiveTracking = (emergencyId: number) => {
+    stopSOSLiveTracking();
+    sosEmergencyIdRef.current = emergencyId;
+    emitSOSLocationNow();
+    sosTrackingIntervalRef.current = setInterval(() => {
+      emitSOSLocationNow();
+    }, 7000);
+  };
+
+  useEffect(() => {
+    return () => {
+      stopSOSLiveTracking();
+    };
+  }, []);
+
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
     const R = 6371; // Earth radius in kilometers
     const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -662,6 +727,14 @@ const DestinationScreen = ({ navigation, route }) => {
 
   // Fetch trip statuses
   const [tripStatusAccepted, setTripStatusAccepted] = useState(null)
+
+  useEffect(() => {
+    const tripIsActive = tripStatusAccepted === "accepted" || tripStatusAccepted === "on-going";
+    if (!tripIsActive) {
+      stopSOSLiveTracking();
+    }
+  }, [tripStatusAccepted]);
+
   // Initialize state from tripData using useEffect
   // FIXED: Better trip status handling
   useEffect(() => {
@@ -1176,6 +1249,11 @@ const DestinationScreen = ({ navigation, route }) => {
                             });
 
                             if (response.ok) {
+                              const createdEmergency = await response.json().catch(() => null);
+                              const emergencyId = Number(createdEmergency?.id);
+                              if (Number.isFinite(emergencyId)) {
+                                startSOSLiveTracking(emergencyId);
+                              }
                               Alert.alert('SOS Sent', 'Emergency alert sent. Help is on the way.');
                             } else {
                               const text = await response.text();

@@ -54,6 +54,7 @@
     ],
     "extra": {
       "googleMapsApiKey": "AIzaSyCW_3yyD7H0125SOsP-vABHG6BrSm47j-w",
+      "openRouterApiKey": "sk-c1c5706b9b494813b3122a5743e40c2d",
       "router": {
         "origin": false
       },

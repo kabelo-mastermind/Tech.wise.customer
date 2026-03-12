@@ -238,7 +238,14 @@ const NthomeServicesScreen = ({ navigation }) => {
       </View>
 
       {/* Floating Action Button for Chat */}
-      <TouchableOpacity style={styles.fab} activeOpacity={0.9} onPress={openChatBot}>
+      <TouchableOpacity
+        style={styles.fab}
+        activeOpacity={0.9}
+        onPress={openChatBot}
+        accessibilityRole="button"
+        accessibilityLabel="Open Nthome Assist"
+        accessibilityHint="Opens the chatbot assistant"
+      >
         <LinearGradient
           colors={["#0DCAF0", "#0AA8CC"]}
           style={styles.fabGradient}
@@ -246,6 +253,7 @@ const NthomeServicesScreen = ({ navigation }) => {
           end={{ x: 1, y: 1 }}
         >
           <Ionicons name="chatbubble-ellipses" size={24} color="#fff" />
+          <Text style={styles.fabLabel}>Nthome Assist</Text>
         </LinearGradient>
       </TouchableOpacity>
 
@@ -449,11 +457,19 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   fabGradient: {
-    width: 56,
+    minWidth: 56,
     height: 56,
     borderRadius: 28,
+    paddingHorizontal: 14,
+    flexDirection: "row",
+    gap: 8,
     justifyContent: "center",
     alignItems: "center",
+  },
+  fabLabel: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "700",
   },
   drawerOverlay: {
     position: "absolute",
