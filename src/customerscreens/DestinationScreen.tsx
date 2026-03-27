@@ -45,7 +45,7 @@ const DestinationScreen = ({ navigation, route }) => {
   const tripAmount = tripData.carData?.price ? Math.round(Number.parseFloat(tripData.carData.price) * 100) : 0
 
   const [tripDataSocket, setTripData] = useState(null)
-  const driver_id = tripData?.driver_id
+  const driver_id = tripData?.driver_id || tripData?.driverId || tripDataSocket?.driver_id || tripDataSocket?.driverId || null
   const user_id = useSelector((state) => state.auth?.user.user_id)
   const user_name = useSelector((state) => state.auth?.user.name)
   const userEmail = useSelector((state) => state.auth?.user.email)
@@ -889,14 +889,17 @@ const DestinationScreen = ({ navigation, route }) => {
             const data = docSnapshot.data() || {} // Ensure data is always an object
             // console.log("🚗 Driver location updated:", data);
 
-            if (!data.latitude || !data.longitude) {
+            const latitude = Number(data.latitude)
+            const longitude = Number(data.longitude)
+
+            if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
               setPaymentStatusMessage("Driver location data is incomplete.");
               return
             }
 
             setDriverLocation((prev) => ({
-              latitude: data.latitude ?? prev.latitude,
-              longitude: data.longitude ?? prev.longitude,
+              latitude: latitude ?? prev.latitude,
+              longitude: longitude ?? prev.longitude,
               // timestamp: data.timestamp ?? prev.timestamp,
             }))
           } else {
@@ -987,16 +990,18 @@ const DestinationScreen = ({ navigation, route }) => {
     fetchRouteDetails()
   }, [userOrigin, driverLocation])
 
-  // **Fetch Route Details(distance and destination araival time) for User and Destination**
+  // **Fetch Route Details (distance and destination arrival time) for User and Destination**
+  // Prefer `userDestination` (set when trip starts) but fall back to `destination` context.
   useEffect(() => {
     const fetchRouteDetails = async () => {
       try {
-        if (!userOrigin.latitude || !destination.latitude) return
+        const dest = (userDestination && userDestination.latitude) ? userDestination : destination;
+        if (!userOrigin?.latitude || !dest?.latitude) return;
 
         const responseDestination = await axios.get(`https://maps.googleapis.com/maps/api/directions/json`, {
           params: {
             origin: `${userOrigin.latitude},${userOrigin.longitude}`,
-            destination: `${destination.latitude},${destination.longitude}`,
+            destination: `${dest.latitude},${dest.longitude}`,
             key: GOOGLE_MAPS_APIKEY,
           },
         })
@@ -1014,7 +1019,7 @@ const DestinationScreen = ({ navigation, route }) => {
     }
 
     fetchRouteDetails()
-  }, [userOrigin, destination])
+  }, [userOrigin, destination, userDestination])
 
   // view driver details
   const handleNavigation = () => {
@@ -1075,13 +1080,24 @@ const DestinationScreen = ({ navigation, route }) => {
 
               {/* Right button OR placeholder */}
               <View style={styles.iconWrapper}>
-                {showCancelButton && !startedTrip && (
+                {/* Show driver icon during accepted/on-going/started trips, otherwise show cancel button when available */}
+                {(tripStatusAccepted === 'accepted' || tripStatusAccepted === 'on-going' || startedTrip) ? (
                   <TouchableOpacity
-                    style={styles.cancelButtonContainer}
-                    onPress={handleCancelTrip}
+                    style={styles.driverIconContainer}
+                    onPress={handleNavigation}
+                    accessibilityLabel="View Driver"
                   >
-                    <Icon name="cancel" color="#0DCAF0" size={30} />
+                    <Icon name="account-circle" type="material" size={34} color="#0DCAF0" />
                   </TouchableOpacity>
+                ) : (
+                  showCancelButton && !startedTrip && (
+                    <TouchableOpacity
+                      style={styles.cancelButtonContainer}
+                      onPress={handleCancelTrip}
+                    >
+                      <Icon name="cancel" color="#0DCAF0" size={30} />
+                    </TouchableOpacity>
+                  )
                 )}
               </View>
             </View>
@@ -1284,7 +1300,6 @@ const DestinationScreen = ({ navigation, route }) => {
               userOrigin={userOrigin}
               userDestination={userDestination}
               showDirections={shouldShowDirections}
-              key={`map-${userDestination?.latitude}-${userDestination?.longitude}`}
             />
           )}
         </View>
@@ -1401,6 +1416,20 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
     elevation: 5,
   },
+
+  driverIconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+    elevation: 6,
+  },
   profilePicture: {
     width: 30,
     height: 30,
@@ -1408,7 +1437,8 @@ const styles = StyleSheet.create({
   },
   rectangleButton: {
     position: "absolute",
-    bottom: 30,
+    // raised above the SOS floating button
+    bottom: 120,
     alignSelf: "center",
     backgroundColor: "#0DCAF0",
     paddingVertical: 12,
@@ -1418,8 +1448,8 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 3,
-    elevation: 5,
-    zIndex: 10,
+    elevation: 8,
+    zIndex: 200,
   },
   buttonText: {
     color: "#FFFFFF",

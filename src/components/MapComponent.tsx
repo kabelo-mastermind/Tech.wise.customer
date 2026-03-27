@@ -135,6 +135,9 @@ const MapComponent = ({
   const [polylineCoords, setPolylineCoords] = useState([])
   const [driverHeading, setDriverHeading] = useState(0)
   const [prevDriverLocation, setPrevDriverLocation] = useState(null)
+  const [followEnabled, setFollowEnabled] = useState(true)
+  const [isUserInteracting, setIsUserInteracting] = useState(false)
+  const userInteractionTimeout = useRef(null)
 
   // Debug logging to track props
   useEffect(() => {
@@ -150,6 +153,7 @@ const MapComponent = ({
   // Optimize map centering with useCallback
   const centerMap = useCallback(() => {
     if (!mapRef.current) return;
+    if (!followEnabled || isUserInteracting) return;
 
     if (userDestination?.latitude && userDestination?.longitude) {
       mapRef.current.animateToRegion({
@@ -178,6 +182,7 @@ const MapComponent = ({
   // Optimize fitting coordinates with useCallback
   const fitCoordinates = useCallback(() => {
     if (!mapRef.current) return
+    if (!followEnabled || isUserInteracting) return
 
     const coordinates = []
 
@@ -251,7 +256,7 @@ const MapComponent = ({
     if (userOrigin || userDestination || driverLocation) {
       fitCoordinates()
     }
-  }, [userOrigin, userDestination, driverLocation, fitCoordinates])
+  }, [userOrigin, userDestination, driverLocation, fitCoordinates, followEnabled, isUserInteracting])
 
   // Calculate bearing when driver moves
   useEffect(() => {
@@ -267,6 +272,7 @@ const MapComponent = ({
   // Update camera based on mode
   useEffect(() => {
     if (!mapRef.current || !driverLocation || !tripStarted) return
+    if (!followEnabled || isUserInteracting) return
 
     let cameraConfig = {}
 
@@ -334,6 +340,16 @@ const MapComponent = ({
       mapRef.current.animateCamera(cameraConfig, { duration: 500 })
     }
   }, [cameraMode, driverLocation, driverHeading, polylineCoords, userDestination, tripStarted])
+
+  // User interaction handlers to pause auto animations when user pans/zooms
+  const handleUserInteraction = () => {
+    setIsUserInteracting(true)
+    if (userInteractionTimeout.current) clearTimeout(userInteractionTimeout.current)
+    userInteractionTimeout.current = setTimeout(() => {
+      setIsUserInteracting(false)
+      userInteractionTimeout.current = null
+    }, 3000)
+  }
 
   const initialRegion = userOrigin?.latitude && userOrigin?.longitude
     ? {
@@ -410,6 +426,8 @@ const MapComponent = ({
         onPress={(e) => {
           if (onMapPress) onMapPress(e.nativeEvent.coordinate)
         }}
+        onPanDrag={() => handleUserInteraction()}
+        onTouchStart={() => handleUserInteraction()}
       >
         {/* Render origin marker */}
         {userOrigin?.latitude && userOrigin?.longitude && !tripStarted && (
@@ -441,38 +459,62 @@ const MapComponent = ({
         )}
 
         {/* Render directions based on trip status */}
-        {showDirections && isConnected && userDestination?.latitude && userDestination?.longitude && (
-          tripStarted && driverLocation?.latitude && driverLocation?.longitude ? (
-            // During trip: Show directions from driver to destination
-            <MapViewDirections
-              origin={driverLocation}
-              destination={userDestination}
-              apikey={GOOGLE_MAPS_APIKEY}
-              strokeWidth={4}
-              strokeColor="#4CAF50" // Different color for active trip
-              onReady={onDirectionsReady}
-              onError={onDirectionsError}
-              precision="high"
-              timePrecision="now"
-              mode="DRIVING"
-            />
-          ) : userOrigin?.latitude && userOrigin?.longitude ? (
-            // Before trip: Show directions from origin to destination
-            <MapViewDirections
-              origin={userOrigin}
-              destination={userDestination}
-              apikey={GOOGLE_MAPS_APIKEY}
-              strokeWidth={4}
-              strokeColor="#2c3e50"
-              onReady={onDirectionsReady}
-              onError={onDirectionsError}
-              precision="high"
-              timePrecision="now"
-              optimizeWaypoints={true}
-              mode="DRIVING"
-            />
-          ) : null
-        )}
+        {(() => {
+          const valid = (c) => c && Number.isFinite(Number(c.latitude)) && Number.isFinite(Number(c.longitude))
+
+          if (!showDirections || !isConnected) return null
+
+          // Prefer driver->destination when driver available and trip started
+          if (tripStarted && valid(driverLocation) && valid(userDestination)) {
+            const origin = { latitude: Number(driverLocation.latitude), longitude: Number(driverLocation.longitude) }
+            const dest = { latitude: Number(userDestination.latitude), longitude: Number(userDestination.longitude) }
+            return (
+              <MapViewDirections
+                key={`dir-${origin.latitude}-${origin.longitude}-${dest.latitude}-${dest.longitude}`}
+                origin={origin}
+                destination={dest}
+                apikey={GOOGLE_MAPS_APIKEY}
+                strokeWidth={4}
+                strokeColor="#4CAF50"
+                onReady={(result) => {
+                  onDirectionsReady(result)
+                  if (followEnabled && !isUserInteracting) fitCoordinates()
+                }}
+                onError={onDirectionsError}
+                precision="high"
+                timePrecision="now"
+                mode="DRIVING"
+              />
+            )
+          }
+
+          // Otherwise show origin->destination if we have origin
+          if (valid(userOrigin) && valid(userDestination)) {
+            const origin = { latitude: Number(userOrigin.latitude), longitude: Number(userOrigin.longitude) }
+            const dest = { latitude: Number(userDestination.latitude), longitude: Number(userDestination.longitude) }
+            return (
+              <MapViewDirections
+                key={`dir-${origin.latitude}-${origin.longitude}-${dest.latitude}-${dest.longitude}`}
+                origin={origin}
+                destination={dest}
+                apikey={GOOGLE_MAPS_APIKEY}
+                strokeWidth={4}
+                strokeColor="#2c3e50"
+                onReady={(result) => {
+                  onDirectionsReady(result)
+                  if (followEnabled && !isUserInteracting) fitCoordinates()
+                }}
+                onError={onDirectionsError}
+                precision="high"
+                timePrecision="now"
+                optimizeWaypoints={true}
+                mode="DRIVING"
+              />
+            )
+          }
+
+          return null
+        })()}
           {/* If offline, optionally show a simple polyline? For now skip directions when offline */}
       </MapView>
 
@@ -486,7 +528,10 @@ const MapComponent = ({
               styles.cameraButton,
               cameraMode === CAMERA_MODES.FOLLOW && styles.activeCameraButton
             ]}
-            onPress={() => setCameraMode(CAMERA_MODES.FOLLOW)}
+            onPress={() => {
+              setCameraMode(CAMERA_MODES.FOLLOW)
+              setFollowEnabled(true)
+            }}
           >
             <Icon name="navigation" type="material" size={20} color={cameraMode === CAMERA_MODES.FOLLOW ? "#fff" : "#333"} />
           </TouchableOpacity>
@@ -509,6 +554,17 @@ const MapComponent = ({
             onPress={() => setCameraMode(CAMERA_MODES.OVERVIEW)}
           >
             <Icon name="map-outline" type="material-community" size={20} color={cameraMode === CAMERA_MODES.OVERVIEW ? "#fff" : "#333"} />
+          </TouchableOpacity>
+          {/* Follow toggle */}
+          <TouchableOpacity
+            style={[styles.cameraButton, followEnabled ? styles.activeCameraButton : null]}
+            onPress={() => {
+              setFollowEnabled(!followEnabled)
+              // when enabling follow re-center immediately
+              if (!followEnabled) centerMap()
+            }}
+          >
+            <Icon name={followEnabled ? "target" : "target-off"} type="material-community" size={18} color={followEnabled ? "#fff" : "#333"} />
           </TouchableOpacity>
         </View>
       )}

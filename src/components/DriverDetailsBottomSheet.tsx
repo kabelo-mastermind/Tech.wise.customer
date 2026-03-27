@@ -126,9 +126,11 @@ const displayClass = classMap[classType] || classType;
 
   const formattedETA = formatETA(ETA)
 
+  const selectedDriverUserId = carData?.driverId || carData?.userId || carData?.id
+
   const extractedData = {
     customerId: user_id,
-    driverId: carData.id,
+    driverId: selectedDriverUserId,
     requestDate: new Date().toISOString(),
     currentDate: new Date().toISOString(),
     pickUpLocation: origin?.address ?? "none",

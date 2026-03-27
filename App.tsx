@@ -20,6 +20,11 @@ LogBox.ignoreLogs([
   "Text strings must be rendered within a <Text> component.",
 ]);
 
+// Hide error overlays in production, keep visible in development
+if (!__DEV__) {
+  LogBox.ignoreAllLogs();
+}
+
 export default function App() {
   return (
     <Provider store={store}>

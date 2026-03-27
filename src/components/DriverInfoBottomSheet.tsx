@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { StyleSheet, Pressable, View, Text, Image, ScrollView, TouchableOpacity, Dimensions } from "react-native"
+import * as Location from "expo-location"
 import { BlurView } from "expo-blur"
 import { Icon } from "react-native-elements"
 import { useSelector } from "react-redux"
@@ -79,6 +80,56 @@ const DriverInfoBlurView = ({ route, navigation }) => {
       setDriverImage(api + "public/customerProfiles/placeholder.png")
       setCarImage(api + "public/carImages/placeholder.png")
     }
+  }, [tripData])
+  
+  // Resolve pickup/dropoff human-readable addresses if missing
+  useEffect(() => {
+    const resolveIfNeeded = async () => {
+      try {
+        if (!tripData || !tripData.tripData) return
+
+        const pick = tripData.tripData.pickUpCoordinates
+        const drop = tripData.tripData.dropOffCoordinates
+
+        const updates = {}
+
+        if (pick && !pick.address && pick.latitude && pick.longitude) {
+          try {
+            const res = await Location.reverseGeocodeAsync({ latitude: Number(pick.latitude), longitude: Number(pick.longitude) })
+            if (Array.isArray(res) && res[0]) {
+              const addr = [res[0].name, res[0].street, res[0].city, res[0].region, res[0].postalCode, res[0].country]
+                .filter(Boolean)
+                .join(", ")
+              updates.pickUpLocation = addr
+            }
+          } catch (e) {
+            updates.pickUpLocation = `${Number(pick.latitude).toFixed(5)}, ${Number(pick.longitude).toFixed(5)}`
+          }
+        }
+
+        if (drop && !drop.address && drop.latitude && drop.longitude) {
+          try {
+            const res = await Location.reverseGeocodeAsync({ latitude: Number(drop.latitude), longitude: Number(drop.longitude) })
+            if (Array.isArray(res) && res[0]) {
+              const addr = [res[0].name, res[0].street, res[0].city, res[0].region, res[0].postalCode, res[0].country]
+                .filter(Boolean)
+                .join(", ")
+              updates.location = addr
+            }
+          } catch (e) {
+            updates.location = `${Number(drop.latitude).toFixed(5)}, ${Number(drop.longitude).toFixed(5)}`
+          }
+        }
+
+        if (Object.keys(updates).length > 0) {
+          setDriverDetails((prev) => ({ ...(prev || {}), ...updates }))
+        }
+      } catch (e) {
+        // swallow - non-critical
+      }
+    }
+
+    resolveIfNeeded()
   }, [tripData])
   // console.log("Driver Data:", driver);
 

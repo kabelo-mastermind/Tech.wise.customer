@@ -99,13 +99,13 @@ export const listenToTripDeclined = (callback) => {
 
 export const stopListeningToTripAccepted = () => {
   if (socket) {
-    socket.off("accepted");  // Stop listening to the "accepted" status
+    socket.off("tripAccepted");
   }
 };
 
 export const stopListeningToTripDeclined = () => {
   if (socket) {
-    socket.off("declined");  // Stop listening to the "declined" status
+    socket.off("tripDeclined");
   }
 };
 

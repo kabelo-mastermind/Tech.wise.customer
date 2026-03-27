@@ -150,7 +150,7 @@ const getMockWeatherData = () => {
 const fetchWeatherData = async (latitude, longitude) => {
   // Try Google Weather API first
   try {
-    const GOOGLE_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
+    const GOOGLE_API_KEY = process.env.GOOGLE_MAPS_APIKEY;
     
     console.log('Fetching weather data from Google...');
     const response = await fetch(

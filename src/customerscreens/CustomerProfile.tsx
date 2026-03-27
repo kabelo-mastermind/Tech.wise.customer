@@ -717,6 +717,22 @@ const CustomerProfile = ({ navigation }) => {
           />
         </View>
 
+        {/* Emergency Contacts */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <Icon name="shield" type="material-community" size={24} color="#0DCAF0" />
+            <Text style={styles.cardTitle}>Emergency Contacts</Text>
+          </View>
+
+          <View style={styles.cardContent}>
+            <Text style={styles.cardDescription}>
+              Save the trusted people you want available for future emergency alert actions.
+            </Text>
+          </View>
+
+          <CardButton title="Manage Emergency Contacts" onPress={() => navigation.navigate("EmergencyContacts")} />
+        </View>
+
         {/* Trip History */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>

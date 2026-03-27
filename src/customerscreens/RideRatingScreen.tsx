@@ -60,13 +60,17 @@ const RideRatingScreen = ({ route, navigation }) => {
     setIsSubmitting(true)
 
     try {
-      await axios.post(api + "ride/rating", {
+      const response = await axios.post(api + "ride/rating", {
         tripId,
         userId,
         rating,
         feedback,
         role: "customer",
       })
+
+      if (response.status < 200 || response.status >= 300 || response.data?.error) {
+        throw new Error(response.data?.error || "Rating submission failed")
+      }
 
       // Directly set submitted state without animation
       setSubmitted(true)

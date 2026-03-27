@@ -28,6 +28,7 @@ import SupportScreen from "../customerscreens/SupportScreen";
 import PrivacySettings from "../customerscreens/PrivacySettings";
 import PaymentScreen from "../customerscreens/PaymentScreen";
 import PaymentMethodsScreen from "../customerscreens/PaymentMethodsScreen";
+import EmergencyContactsScreen from "../customerscreens/EmergencyContactsScreen";
 import LanguageSettings from "../customerscreens/LanguageSettings";
 import CommunicationPreferences from "../customerscreens/CommunicationPreferences";
 import AddPaymentMethodScreen from "../customerscreens/AddPaymentMethodScreen";
@@ -169,6 +170,16 @@ function DrawerNavigator() {
         options={{
           drawerIcon: ({ focused, size }) => (
             <Icon name="account-circle" type="material-community" size={size} color={focused ? "#7cc" : "gray"} />
+          ),
+        }}
+      />
+      <Drawer.Screen
+        name="EmergencyContacts"
+        component={EmergencyContactsScreen}
+        options={{
+          drawerLabel: "Emergency Contacts",
+          drawerIcon: ({ focused, size }) => (
+            <Icon name="shield-account" type="material-community" size={size} color={focused ? "#7cc" : "gray"} />
           ),
         }}
       />
@@ -430,6 +441,7 @@ export default function RootNavigator() {
         <Stack.Screen name="ForgotPasswordScreen" component={ForgotPasswordScreen} options={{ headerShown: false }} />
         <Stack.Screen name="ProtectedScreen" component={ProtectedScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Profile" component={CustomerProfile} options={{ headerShown: false }} />
+        <Stack.Screen name="EmergencyContacts" component={EmergencyContactsScreen} options={{ headerShown: false }} />
         <Stack.Screen name="TripDetails" component={TripDetails} options={{ headerShown: false }} />
         <Stack.Screen name="services" component={NthomeServicesScreen} options={{ headerShown: false }} />
         <Stack.Screen name="TripHistory" component={TripHistory} options={{ headerShown: false }} />
